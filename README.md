@@ -9,8 +9,10 @@ All synthesis is original code; no samples or firmware.
 
 ## Download (no compiling)
 
-Go to the **Releases** page (right-hand column of the repository, or `/releases`) and download the zip
-for your system: `Kinetik-KMSP6-macOS.zip` (universal: Apple Silicon + Intel), `-Windows.zip` or `-Linux.zip`.
+Go to the **Releases** page and download the installer for your system: `Kinetik-KMSP6-macOS.pkg` (macOS
+universal: Apple Silicon + Intel; VST3, AU and CLAP) or `Kinetik-KMSP6-Windows-Setup.exe` (Windows 64-bit; VST3 and CLAP).
+The zips contain the same plugins for manual installation, and the Linux build. Without a licence file the
+plugin runs in demo mode (3 s of silence every 45 s); click "DEMO - CLICK TO REGISTER" under the logo to load it.
 
 ### Install on macOS
 
