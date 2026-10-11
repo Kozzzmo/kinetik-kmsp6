@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 # Kinetik KMSP-6 — build with DPF (https://github.com/DISTRHO/DPF)
 NAME = KinetikKMSP6
-FILES_DSP = MonoPlugin.cpp
+FILES_DSP = MonoPlugin.cpp third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c
 FILES_UI  = MonoUI.cpp
 DPF_PATH ?= ../dpf
 DPF_TARGET_DIR = ../bin

@@ -7,6 +7,7 @@
 #include "Help.hpp"
 #include "Skins.hpp"
 #include "Fonts.hpp"
+#include "License.hpp"
 #include "MonoShared.hpp"
 #include <cstdlib>
 #include <algorithm>
@@ -41,7 +42,7 @@ enum Mode { mdTrig, mdAccent, mdSlide, mdNote, mdLen, mdRatch, mdCond, mdTime, k
 static const char* const kModeNames[kModes] = {"TRIG", "ACCENT", "SLIDE", "NOTE", "LEN", "RATCH", "COND", "TIME"};
 
 enum DragKind { dkNone, dkTrackKnob, dkMasterKnob, dkTempo, dkSwing, dkAccent, dkKit, dkStepNote, dkStepLen, dkKey };
-enum Overlay { ovNone, ovPicker, ovPresets, ovHelp, ovSkins, ovSave };
+enum Overlay { ovNone, ovPicker, ovPresets, ovHelp, ovSkins, ovSave, ovLicense };
 enum DragExtra { dkResize = 100 };
 
 static const char* const kMachineShort[kMachines] = {
@@ -364,6 +365,12 @@ protected:
     R saveBox() const { return {290.f, 240.f, 600.f, 270.f}; }
     R saveField() const { return {320.f, 330.f, 540.f, 52.f}; }
     R saveOk() const { return {620.f, 440.f, 240.f, 40.f}; }
+    // licence window
+    R logoArea() const { return {12.f, 4.f, 372.f, 50.f}; }
+    R licBox() const { return {290.f, 210.f, 600.f, 330.f}; }
+    R licLoad() const { return {320.f, 460.f, 190.f, 40.f}; }
+    R licPaste() const { return {520.f, 460.f, 190.f, 40.f}; }
+    R licClose() const { return {720.f, 460.f, 140.f, 40.f}; }
     R saveCancel() const { return {320.f, 440.f, 140.f, 40.f}; }
     // machine picker
     R pickerBox() const { return {170.f, 170.f, 840.f, 420.f}; }
@@ -576,7 +583,8 @@ protected:
         }
         drawSparkle(right + 10, 19, 9.f, star);
         label(right + 30, 21, "KMSP-6", 13.f, th->text, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
-        label(right + 30, 39, "MONO SYNTH PROGRAM", 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        if (licInfo.valid) label(right + 30, 39, "MONO SYNTH PROGRAM", 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        else label(right + 30, 39, "DEMO - CLICK TO REGISTER", 9.5f, th->logo == lgRiso ? th->text : th->accent, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
     }
 
 
@@ -605,6 +613,7 @@ protected:
         if (overlay == ovHelp) drawHelp();
         if (overlay == ovSkins) drawSkins();
         if (overlay == ovSave) drawSave();
+        if (overlay == ovLicense) drawLicense();
         drawGrip();
     }
 
@@ -1638,6 +1647,11 @@ protected:
 
     bool onKeyboard(const KeyboardEvent& ev) override
     {
+        if (overlay == ovLicense) {
+            if (ev.press && (ev.key == 'v' || ev.key == 'V') && (ev.mod & (kModifierControl | kModifierSuper))) pasteLicense();
+            else if (ev.press && ev.key == kKeyEscape) { overlay = ovNone; licMsg.clear(); repaint(); }
+            return true;
+        }
         if (overlay == ovSave) {
             if (ev.press) {
                 if (ev.key == kKeyEscape) { overlay = ovNone; repaint(); }
@@ -1702,6 +1716,8 @@ protected:
         }
         if (overlay == ovPresets) { presetClick(x, y, dbl); return true; }
         if (overlay == ovHelp) { overlay = ovNone; repaint(); return true; }
+        if (overlay == ovLicense) return licenseClick(x, y);
+        if (overlay == ovNone && logoArea().in(x, y)) { overlay = ovLicense; licMsg.clear(); repaint(); return true; }
         if (overlay == ovSave) {
             if (saveOk().in(x, y)) commitSave();
             else if (saveCancel().in(x, y) || !saveBox().in(x, y)) { overlay = ovNone; repaint(); }
@@ -2002,6 +2018,72 @@ protected:
         return false;
     }
 
+
+    // ------------------------------------------------------------------ licence (registration)
+    void drawLicense()
+    {
+        const R bx = licBox();
+        overlayBox(bx);
+        number(320, bx.y + 36, licInfo.valid ? "Registered" : "Register KMSP-6", 22.f, th->text, ALIGN_LEFT | ALIGN_MIDDLE);
+        if (licInfo.valid) {
+            label(320, bx.y + 82, ("Licensed to " + licInfo.name).c_str(), 13.f, th->text, ALIGN_LEFT | ALIGN_MIDDLE);
+            label(320, bx.y + 108, licInfo.email.c_str(), 11.f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+            label(320, bx.y + 134, ("Licence " + licInfo.product + "  -  order " + licInfo.order + "  -  " + licInfo.issued).c_str(), 10.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+            label(320, bx.y + 176, "Thank you for supporting Kinetik.", 11.f, th->text, ALIGN_LEFT | ALIGN_MIDDLE);
+        } else {
+            label(320, bx.y + 80, "This copy runs in demo mode: the sound drops out for 3 seconds every 45 seconds.", 10.5f, th->text, ALIGN_LEFT | ALIGN_MIDDLE);
+            label(320, bx.y + 106, "After your purchase you receive a licence file by e-mail.", 10.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+            label(320, bx.y + 130, "Load that file, or copy its text and press PASTE LICENSE (or Ctrl/Cmd+V).", 10.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        }
+        label(320, bx.y + 210, licMsg.c_str(), 10.5f, th->lock, ALIGN_LEFT | ALIGN_MIDDLE);
+        button(licLoad(), "LOAD LICENSE FILE", false, 10.5f);
+        button(licPaste(), "PASTE LICENSE", false, 10.5f);
+        button(licClose(), "CLOSE", true, 11.f);
+    }
+
+    void applyLicenseText(const std::string& text)
+    {
+        if (text.empty()) { licMsg = "Nothing to read."; repaint(); return; }
+        const lic::Info i = lic::install(text, "KMSP-6");
+        if (i.valid) {
+            licInfo = i;
+            licMsg = "Licence installed. The demo limits are removed.";
+            setState("cmd", "lic");
+        } else licMsg = i.error;
+        repaint();
+    }
+
+    void pasteLicense()
+    {
+        size_t n = 0;
+        const void* d = getWindow().getClipboard(n);
+        if (d == nullptr || n == 0) { licMsg = "The clipboard is empty. Copy the licence text first."; repaint(); return; }
+        std::string t((const char*)d, n);
+        while (!t.empty() && t.back() == '\0') t.pop_back();
+        applyLicenseText(t);
+    }
+
+    void uiFileBrowserSelected(const char* filename) override
+    {
+        if (filename == nullptr) return;
+        std::string text;
+        if (!lic::readFile(filename, text)) { licMsg = "Could not read that file."; repaint(); return; }
+        applyLicenseText(text);
+    }
+
+    bool licenseClick(float x, float y)
+    {
+        if (licLoad().in(x, y)) {
+            FileBrowserOptions o;
+            o.title = "Load your Kinetik licence";
+            if (!openFileBrowser(o)) licMsg = "The file browser is not available here: use PASTE LICENSE.";
+            repaint(); return true;
+        }
+        if (licPaste().in(x, y)) { pasteLicense(); return true; }
+        if (licClose().in(x, y) || !licBox().in(x, y)) { overlay = ovNone; licMsg.clear(); repaint(); }
+        return true;
+    }
+
     void uiIdle() override
     {
         viewIdle();
@@ -2043,6 +2125,8 @@ private:
     bool viewDirty = false; int viewDirtyTicks = 0;
     double resizeStartW = 0, grabX = 0, grabY = 0;
     std::string presetName = "Init";
+    lic::Info licInfo = lic::findInstalled("KMSP-6");
+    std::string licMsg;
     uint32_t rndCounter = 0x51ED;
     bool undoValid = false; std::vector<float> undoValues; std::string undoBank; const char* undoWhat = "";
 

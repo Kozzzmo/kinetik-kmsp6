@@ -2,6 +2,7 @@
 #include "DistrhoPlugin.hpp"
 #include "Engine.hpp"
 #include "MonoShared.hpp"
+#include "License.hpp"
 #include <atomic>
 #include <mutex>
 #include <memory>
@@ -40,6 +41,7 @@ public:
         engine->init(getSampleRate());
         notes.reserve(512);
         pending.reserve(256);
+        licensed.store(lic::findInstalled(kProductCode).valid);
     }
 
     // ---- MonoDirect (UI thread) ----
@@ -186,7 +188,8 @@ protected:
                 const size_t len = e ? (size_t)(e - s) : std::strlen(s);
                 line.assign(s, len);
                 const char* c = line.c_str();
-                if (line.rfind("fill ", 0) == 0) fillFlag.store(std::atoi(c + 5) != 0);
+                if (line == "lic") licensed.store(lic::findInstalled(kProductCode).valid);  // the UI installed a licence
+                else if (line.rfind("fill ", 0) == 0) fillFlag.store(std::atoi(c + 5) != 0);
                 else if (line.rfind("sel ", 0) == 0) selTrack.store(clampi(std::atoi(c + 4), 0, kTracks - 1));
                 else if (line.rfind("rec ", 0) == 0) recFlag.store(std::atoi(c + 4) != 0);
                 else if (line.rfind("non ", 0) == 0 || line.rfind("noff ", 0) == 0) {
@@ -284,6 +287,22 @@ protected:
             if (!routed) notes.push_back({ev.frame, sel, ev.data[2] / 100.f, (int)ev.data[1], on});
         }
         engine->process(outputs, frames, tp, notes.data(), (uint32_t)notes.size());
+        if (!licensed.load(std::memory_order_relaxed)) demoGate(outputs, frames);
+    }
+
+    // Demo mode (no licence installed): the sound drops out for 3 seconds every 45 seconds.
+    void demoGate(float** outputs, uint32_t frames)
+    {
+        const double sr = getSampleRate();
+        const uint64_t period = (uint64_t)(45.0 * sr), mute = (uint64_t)(3.0 * sr);
+        const float coef = 1.f - std::exp(-1.f / (0.01f * (float)sr));
+        for (uint32_t i = 0; i < frames; ++i) {
+            const float target = (demoPos % period) >= period - mute ? 0.f : 1.f;
+            demoGain += (target - demoGain) * coef;
+            ++demoPos;
+            if (demoGain < 0.9999f)
+                for (uint32_t c = 0; c < DISTRHO_PLUGIN_NUM_OUTPUTS; ++c) outputs[c][i] *= demoGain;
+        }
     }
 
 private:
@@ -293,6 +312,9 @@ private:
     std::atomic<uint32_t> dirty{0};
     std::atomic<bool> fillFlag{false}, recFlag{false}, panicFlag{false};
     std::atomic<int> selTrack{0};
+    std::atomic<bool> licensed{false};
+    uint64_t demoPos = 0; float demoGain = 1.f;
+    static constexpr const char* kProductCode = "KMSP-6";
     String skinState;
     std::vector<NoteEvent> notes, pending;
 

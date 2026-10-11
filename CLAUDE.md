@@ -76,3 +76,17 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 1`).
   master echo / FDN reverb / EQ / compressor / drive / safety limiter, denormals flushed (SSE and ARM64).
 - `Skins.hpp`, `Fonts.hpp` (embedded OFL fonts) and `Dsp.hpp` are shared with the sister plugin
   (kinetik-kdsp16 ⇄ kinetik-kmsp6): keep them identical in both repositories.
+
+## Licences and demo mode
+
+- `src/License.hpp` (identical in every Kinetik repo) verifies Ed25519-signed licence files with Monocypher
+  (`src/third_party/monocypher`, BSD-2/CC0). Format: `KINETIK-LICENSE 1` + `product` (KDSP-16, KMSP-6 or BUNDLE),
+  `name`, `email`, `order`, `issued`, then `signature` (hex) over the previous lines.
+- Installed licences: `<user data>/Kinetik/Licenses/*.kinetik-license` (APPDATA on Windows,
+  ~/Library/Application Support on macOS, ~/.config on Linux).
+- Without a valid licence the DSP mutes the outputs for 3 s every 45 s (`demoGate` in the plugin glue). The UI
+  shows "DEMO - CLICK TO REGISTER" under the logo; the licence window loads a file (DPF file browser) or pastes
+  text (button or Ctrl/Cmd+V), installs it and sends `cmd` "lic" so the DSP re-checks.
+- Licences are made with `tools/make_license.py` and the PRIVATE key, which the owner keeps outside every
+  repository. Never commit it, never ask for it to be pasted into a conversation that is shared.
+- `tests/license.cpp` uses fixtures signed with a fixed test key that the plugins never trust.

@@ -75,6 +75,12 @@ jobs:
         run: ./scripts/setup.sh
       - name: Build
         run: make -j4
+      - name: Run tests
+        run: |
+          gcc -O2 -c src/third_party/monocypher/monocypher.c -o /tmp/m1.o
+          gcc -O2 -c src/third_party/monocypher/monocypher-ed25519.c -o /tmp/m2.o
+          g++ -O2 -std=c++17 -Isrc tests/license.cpp /tmp/m1.o /tmp/m2.o -o /tmp/license-test && /tmp/license-test
+          g++ -O2 -std=c++17 tests/presets.cpp -o /tmp/presets-test && mkdir -p out && /tmp/presets-test > /dev/null
       - name: Package
         run: |
           mkdir -p pkg && cp -R bin/*.vst3 bin/*.clap pkg/ && cp README.md pkg/
