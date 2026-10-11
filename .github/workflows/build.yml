@@ -85,12 +85,17 @@ jobs:
           path: Kinetik-KMSP6-Linux.zip
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # every push to main publishes (or refreshes) the release named after the VERSION file
+    if: github.ref == 'refs/heads/main'
     needs: [macos, windows, linux]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
+      - name: Read version
+        id: ver
+        run: echo "v=$(cat VERSION)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v5
         with:
           path: dist
@@ -98,6 +103,10 @@ jobs:
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.v }}
+          name: v${{ steps.ver.outputs.v }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
           files: dist/*.zip
           generate_release_notes: false
           body: |

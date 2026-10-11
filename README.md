@@ -55,6 +55,7 @@ Run `make clean` when switching target systems.
 | `scripts/dpfpatch.py` | small DPF patches: ignore stale host values after UI edits (Ableton), auxiliary output buses, resize fix |
 | `tests/` | offline engine tests (`g++ -O2 -std=c++17 tests/features.cpp && ./a.out`) |
 | `fonts/` | licences of the embedded fonts (SIL Open Font License) |
+| `VERSION` | version number: pushing to `main` publishes the matching GitHub Release |
 
 ## User data
 
