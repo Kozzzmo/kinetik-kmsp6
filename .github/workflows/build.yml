@@ -1,0 +1,83 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fetch and patch DPF
+        run: ./scripts/setup.sh
+      - name: "Build (universal: Apple Silicon + Intel)"
+        run: make universal -j4
+      - name: Ad-hoc code signing
+        run: |
+          for b in bin/*.vst3 bin/*.component bin/*.clap; do
+            [ -e "$b" ] && codesign --force --deep --sign - "$b"
+          done
+          echo "::notice title=architectures::$(lipo -archs bin/KinetikKMSP6.vst3/Contents/MacOS/KinetikKMSP6)"
+      - name: Validate the Audio Unit (auval)
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R bin/KinetikKMSP6.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 2
+          auval -a | grep -i kinetik || true
+          if auval -v aumu KM06 Kntk > auval.txt 2>&1; then
+            echo "::notice title=auval::AU VALIDATION SUCCEEDED"
+          else
+            echo "::warning title=auval::$(tail -5 auval.txt | tr '\n' ' ')"
+          fi
+      - name: Package
+        run: |
+          mkdir -p pkg
+          cp -R bin/*.vst3 bin/*.component bin/*.clap pkg/ 2>/dev/null || true
+          cp README.md pkg/
+          cd pkg && zip -qry ../Kinetik-KMSP6-macOS.zip .
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Kinetik-KMSP6-macOS
+          path: Kinetik-KMSP6-macOS.zip
+
+  windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install MinGW
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64
+      - name: Fetch and patch DPF
+        run: ./scripts/setup.sh
+      - name: Build (Windows x64)
+        run: make -j4 WINDOWS=true CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
+      - name: Package
+        run: |
+          mkdir -p pkg && cp -R bin/*.vst3 bin/*.clap pkg/ && cp README.md pkg/
+          cd pkg && zip -qry ../Kinetik-KMSP6-Windows.zip .
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Kinetik-KMSP6-Windows
+          path: Kinetik-KMSP6-Windows.zip
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libdbus-1-dev libjack-jackd2-dev pkg-config
+      - name: Fetch and patch DPF
+        run: ./scripts/setup.sh
+      - name: Build
+        run: make -j4
+      - name: Package
+        run: |
+          mkdir -p pkg && cp -R bin/*.vst3 bin/*.clap pkg/ && cp README.md pkg/
+          cd pkg && zip -qry ../Kinetik-KMSP6-Linux.zip .
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Kinetik-KMSP6-Linux
+          path: Kinetik-KMSP6-Linux.zip
