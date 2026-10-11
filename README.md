@@ -9,8 +9,8 @@ All synthesis is original code; no samples or firmware.
 
 ## Download (no compiling)
 
-Every push builds the plugin for macOS (universal: Apple Silicon + Intel), Windows and Linux.
-Open the **Actions** tab → latest **build** run → **Artifacts** → `Kinetik-KMSP6-macOS`.
+Go to the **Releases** page (right-hand column of the repository, or `/releases`) and download the zip
+for your system: `Kinetik-KMSP6-macOS.zip` (universal: Apple Silicon + Intel), `-Windows.zip` or `-Linux.zip`.
 
 ### Install on macOS
 
@@ -69,6 +69,6 @@ Plugin code: GPL-3.0. DPF: ISC. Fonts (Instrument Serif, IBM Plex Mono, Archivo 
 
 ### En bref (FR)
 
-Pour Mac : onglet **Actions** → dernier build → artefact **Kinetik-KMSP6-macOS**, puis copier les fichiers
+Pour Mac : page **Releases** du dépôt → télécharger **Kinetik-KMSP6-macOS.zip**, puis copier les fichiers
 dans `~/Library/Audio/Plug-Ins/…` et lancer les commandes `xattr` ci-dessus. Pour compiler soi-même :
 `make setup` puis `make universal`.

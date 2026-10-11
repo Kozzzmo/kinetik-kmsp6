@@ -2,6 +2,8 @@ name: build
 
 on:
   push:
+    branches: ['**']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -81,3 +83,24 @@ jobs:
         with:
           name: Kinetik-KMSP6-Linux
           path: Kinetik-KMSP6-Linux.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: false
+          body: |
+            Download the zip for your system below (Assets).
+            macOS: universal (Apple Silicon + Intel), VST3 + AU + CLAP. Installation steps in the README.
+            Windows: VST3 + CLAP (64-bit). Linux: VST3 + CLAP.
