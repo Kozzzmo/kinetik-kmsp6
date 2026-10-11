@@ -55,6 +55,7 @@ Run `make clean` when switching target systems.
 | `scripts/dpfpatch.py` | small DPF patches: ignore stale host values after UI edits (Ableton), auxiliary output buses, resize fix |
 | `tests/` | offline engine tests (`g++ -O2 -std=c++17 tests/features.cpp && ./a.out`) |
 | `fonts/` | licences of the embedded fonts (SIL Open Font License) |
+| `LICENSE`, `THIRD_PARTY_NOTICES.txt` | proprietary licence; third-party licences to ship with the product |
 | `VERSION` | version number: pushing to `main` publishes the matching GitHub Release |
 
 ## User data
@@ -62,9 +63,11 @@ Run `make clean` when switching target systems.
 - User presets: `~/Library/Application Support/Kinetik/KMSP-6/Presets/*.kmsp` (Windows: `%APPDATA%\Kinetik\KMSP-6\Presets`)
 - Default skin and size: `~/Library/Preferences/KinetikKMSP6-view.txt`
 
-## Licences
+## Licence
 
-Plugin code: GPL-3.0. DPF: ISC. Fonts (Instrument Serif, IBM Plex Mono, Archivo Black): SIL OFL 1.1.
+Proprietary — all rights reserved (see `LICENSE`). Third-party components (DPF, pugl, NanoVG, CLAP headers,
+fonts) are used under their own permissive licences, listed in `THIRD_PARTY_NOTICES.txt`, which must ship
+with every build. VST is a trademark of Steinberg Media Technologies GmbH.
 
 ---
 
