@@ -70,7 +70,7 @@ protected:
     const char* getDescription() const override { return "6-track monophonic synthesizer with note sequencer, arpeggiator and parameter locks"; }
     const char* getMaker() const override { return "Kinetik"; }
     const char* getLicense() const override { return "Proprietary"; }
-    uint32_t getVersion() const override { return d_version(0, 2, 0); }
+    uint32_t getVersion() const override { return d_version(0, 2, 1); }
 
     void initParameter(uint32_t index, Parameter& p) override
     {
@@ -291,7 +291,7 @@ protected:
             if (!routed) notes.push_back({ev.frame, sel, ev.data[2] / 100.f, (int)ev.data[1], on});
         }
         engine->process(outputs, frames, tp, notes.data(), (uint32_t)notes.size());
-        if (!licensed.load(std::memory_order_relaxed)) demoGate(outputs, frames);
+        if (lic::kDemoModeEnabled && !licensed.load(std::memory_order_relaxed)) demoGate(outputs, frames);
     }
 
     // Demo mode (no licence installed): the sound drops out for 3 seconds every 45 seconds.

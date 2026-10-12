@@ -618,7 +618,7 @@ protected:
         }
         drawSparkle(right + 10, 19, 9.f, star);
         label(right + 30, 21, "KMSP-6", 13.f, th->text, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
-        if (licInfo.valid) label(right + 30, 39, "MONO SYNTH PROGRAM", 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        if (licInfo.valid || !lic::kDemoModeEnabled) label(right + 30, 39, "MONO SYNTH PROGRAM", 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
         else label(right + 30, 39, "DEMO - CLICK TO REGISTER", 9.5f, th->logo == lgRiso ? th->text : th->accent, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
     }
 

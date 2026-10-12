@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Beta test: demo mode switched off (no silences, no licence needed). It comes back for the commercial release
+  (`kDemoModeEnabled` in `src/License.hpp`).
+
 ## 0.2
 
 - **Readable parameter names** everywhere (ATTACK, DECAY, CUTOFF, RESO, TREMOLO, EQ FREQ, DRIVE...), machine

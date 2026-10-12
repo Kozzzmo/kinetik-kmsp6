@@ -31,6 +31,10 @@ extern "C" {
 namespace kn {
 namespace lic {
 
+// Demo mode (3 s of silence every 45 s without a licence). OFF during the beta test: set to true for the
+// commercial release.
+static constexpr bool kDemoModeEnabled = false;
+
 // public key of the Kinetik licence signer (the private key never goes into a repository)
 static const uint8_t kPublicKey[32] = {
     0xc5, 0x07, 0x6d, 0x03, 0xb1, 0x52, 0x4d, 0x2a, 0x32, 0xd8, 0x2c, 0x01, 0x70, 0x9d, 0xd3, 0x33,

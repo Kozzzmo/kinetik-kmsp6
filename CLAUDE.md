@@ -88,7 +88,8 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
   `name`, `email`, `order`, `issued`, then `signature` (hex) over the previous lines.
 - Installed licences: `<user data>/Kinetik/Licenses/*.kinetik-license` (APPDATA on Windows,
   ~/Library/Application Support on macOS, ~/.config on Linux).
-- Without a valid licence the DSP mutes the outputs for 3 s every 45 s (`demoGate` in the plugin glue). The UI
+- **Beta: demo mode is OFF** (`lic::kDemoModeEnabled = false` in `License.hpp`); set it to true before selling.
+- Without a valid licence (and demo mode on) the DSP mutes the outputs for 3 s every 45 s (`demoGate` in the plugin glue). The UI
   shows "DEMO - CLICK TO REGISTER" under the logo; the licence window loads a file (DPF file browser) or pastes
   text (button or Ctrl/Cmd+V), installs it and sends `cmd` "lic" so the DSP re-checks.
 - Licences are made with `tools/make_license.py` and the PRIVATE key, which the owner keeps outside every
