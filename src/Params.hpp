@@ -2,6 +2,7 @@
 #pragma once
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
 
 namespace kn {
 
@@ -12,32 +13,44 @@ static constexpr int kPatterns = 16;
 // ---- per-track parameters (0..127), all of them can be locked per step ----
 enum TrackParam {
     tpSyn0 = 0,                                                     // 0..7  machine parameters
-    tpATK = 8, tpHOLD, tpDEC, tpSUS, tpREL, tpVOL, tpPAN, tpPORT,   // AMP
-    tpBASE = 16, tpWDTH, tpHPQ, tpLPQ, tpFATK, tpFDEC, tpBOF, tpWOF, // FILTER
-    tpAMD = 24, tpAMF, tpEQF, tpEQG, tpSRR, tpDIST, tpDEL, tpREV,   // EFX
-    tpLFO1 = 32, tpLFO2 = 38, tpLFO3 = 44,                           // 3 LFOs x 6 params
-    kLockable = 50,
-    kTrackParams = 50
+    tpATK = 8, tpHOLD, tpDEC, tpSUS, tpREL, tpVOL, tpPAN, tpPORT,          // AMP
+    tpCUTOFF = 16, tpRESO, tpFTYPE, tpLOWCUT, tpFATK, tpFDEC, tpFENV, tpKEYTRK, // FILTER
+    tpAMD = 24, tpAMF, tpEQF, tpEQG, tpSRR, tpDIST, tpDEL, tpREV,          // FX
+    tpLFO1 = 32, tpLFO2 = 38, tpLFO3 = 44,                                  // 3 LFOs x 6 params
+    tpLFOX = 50,                                                            // 3 LFOs x (SYNC, PHASE)
+    kLockable = 56,
+    kTrackParams = 56
 };
 static constexpr int kLfoBase[3] = {tpLFO1, tpLFO2, tpLFO3};
-static constexpr int kLfoDests = 32; // an LFO can move params 0..31 of any track
+static constexpr int kLfoDests = 32; // an LFO can move params 0..31 of any track (index 32 = pitch)
+// parameter k (0..7) of LFO l: RATE DEPTH WAVE MODE DEST TARGET SYNC PHASE
+inline int lfoParam(int l, int k) { return k < 6 ? kLfoBase[l] + k : tpLFOX + l * 2 + (k - 6); }
 
-static const char* const kFxNames[42] = {
-    "ATK", "HOLD", "DEC", "SUS", "REL", "VOL", "PAN", "PORT",
-    "BASE", "WDTH", "HPQ", "LPQ", "ATK", "DEC", "BOF", "WOF",
-    "AMD", "AMF", "EQF", "EQG", "SRR", "DIST", "DEL", "REV",
-    "SPD", "DEP", "SHP", "TYP", "DEST", "TRK",
-    "SPD", "DEP", "SHP", "TYP", "DEST", "TRK",
-    "SPD", "DEP", "SHP", "TYP", "DEST", "TRK",
+static const char* const kFxNames[kTrackParams - 8] = {
+    "ATTACK", "HOLD", "DECAY", "SUSTAIN", "RELEASE", "LEVEL", "PAN", "GLIDE",
+    "CUTOFF", "RESO", "TYPE", "LOW CUT", "ENV ATK", "ENV DEC", "ENV AMT", "KEY TRK",
+    "TREMOLO", "TREM RATE", "EQ FREQ", "EQ GAIN", "CRUSH", "DRIVE", "DELAY", "REVERB",
+    "RATE", "DEPTH", "WAVE", "MODE", "DEST", "TARGET",
+    "RATE", "DEPTH", "WAVE", "MODE", "DEST", "TARGET",
+    "RATE", "DEPTH", "WAVE", "MODE", "DEST", "TARGET",
+    "SYNC", "PHASE", "SYNC", "PHASE", "SYNC", "PHASE",
 };
-static const uint8_t kFxDefaults[42] = {
+static const uint8_t kFxDefaults[kTrackParams - 8] = {
     0, 0, 50, 90, 40, 100, 64, 0,
-    0, 96, 0, 30, 0, 50, 64, 82,
+    96, 30, 0, 0, 0, 50, 82, 64,
     0, 64, 64, 64, 0, 0, 0, 0,
     64, 0, 0, 0, 0, 0,
     40, 0, 0, 0, 0, 0,
     20, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0,
 };
+// filter types (TYPE parameter)
+static constexpr int kFilterTypes = 5;
+static const char* const kFilterTypeNames[kFilterTypes] = {"LP 12", "LP 24", "BAND", "HIGH", "NOTCH"};
+inline int filterTypeIndex(int v) { const int i = v * kFilterTypes / 128; return i < 0 ? 0 : (i >= kFilterTypes ? kFilterTypes - 1 : i); }
+inline int filterTypeValue(int i) { return (i * 128 + kFilterTypes - 1) / kFilterTypes; }
+// cutoff / low cut value (0..127) -> Hz (20 Hz .. 20.5 kHz, 10 octaves)
+inline float cutoffHz(float v) { return 20.f * std::exp2(v / 127.f * 10.f); }
 
 // ---- global parameters ----
 enum GlobalParam {
@@ -45,21 +58,26 @@ enum GlobalParam {
     gECHO_TIME, gECHO_FB, gECHO_LPF, gECHO_HPF, gECHO_WIDTH, gECHO_LEV,
     gREV_SIZE, gREV_DAMP, gREV_GATE, gREV_HPF, gREV_PRE, gREV_LEV,
     gEQ_LOW, gEQ_HIGH, gCMP_THR, gCMP_RAT, gCMP_ATK, gCMP_REL, gDRIVE, gVOLUME,
+    gECHO_MODEL, gECHO_MOD, gREV_MODEL, gREV_MOD,
     gOUT_STEP, gOUT_LEDS, gOUT_PATTERN,
     kGlobalParams
 };
 static constexpr int kGlobalBase = kTracks * kTrackParams;
 static constexpr int kTotalParams = kGlobalBase + kGlobalParams;
 
-static const char* const kMasterNames[20] = {
-    "TIME", "FB", "LPF", "HPF", "WIDTH", "LEV",
-    "DECAY", "DAMP", "GATE", "HPF", "PRE", "LEV",
-    "LOW", "HIGH", "THRS", "RATIO", "ATK", "REL", "DRIVE", "VOL"
+// master parameters gECHO_TIME .. gREV_MOD (index g - gECHO_TIME)
+static constexpr int kMasterCount = gREV_MOD - gECHO_TIME + 1;
+static const char* const kMasterNames[kMasterCount] = {
+    "TIME", "FEEDBACK", "HIGH CUT", "LOW CUT", "WIDTH", "LEVEL",
+    "DECAY", "DAMPING", "GATE", "LOW CUT", "PRE-DELAY", "LEVEL",
+    "LOW", "HIGH", "THRESH", "RATIO", "ATTACK", "RELEASE", "DRIVE", "VOLUME",
+    "MODEL", "MOD", "MODEL", "MOD"
 };
-static const uint8_t kMasterDefaults[20] = {
+static const uint8_t kMasterDefaults[kMasterCount] = {
     48, 50, 100, 10, 64, 64,
     60, 64, 0, 20, 10, 64,
-    64, 64, 127, 40, 20, 50, 0, 100
+    64, 64, 127, 40, 20, 50, 0, 100,
+    0, 30, 52, 30
 };
 
 // ---- machines ----
@@ -73,14 +91,14 @@ struct MachineDef {
 
 static const MachineDef kMachineDefs[kMachines] = {
     {"OFF",   {"-", "-", "-", "-", "-", "-", "-", "-"},                    {0, 0, 0, 0, 0, 0, 0, 0}},
-    {"SAW",   {"SHP1", "SHP2", "DTUN", "MIX", "OCT2", "PW", "SUB", "NOIS"}, {0, 0, 72, 64, 64, 64, 0, 0}},
-    {"PULSE", {"PW", "PWMS", "PWMD", "SYNC", "RING", "SUB", "NOIS", "CRSH"}, {64, 40, 30, 0, 0, 0, 0, 0}},
-    {"SUPER", {"DTUN", "MIX", "VOIC", "SHP", "SUB", "OCT", "NOIS", "DRIV"}, {50, 90, 127, 0, 0, 64, 0, 0}},
-    {"FM",    {"RAT1", "IDX1", "RAT2", "IDX2", "FDBK", "ALGO", "MDEC", "MSUS"}, {32, 50, 64, 0, 0, 0, 50, 40}},
-    {"WAVE",  {"POS", "SCAN", "SDEP", "OCT2", "DTUN", "MIX2", "FOLD", "CRSH"}, {0, 40, 0, 64, 70, 0, 0, 0}},
-    {"VOX",   {"VOWL", "FORM", "BRTH", "RES", "VIBD", "VIBR", "GLOT", "CHOR"}, {0, 64, 20, 60, 0, 64, 40, 0}},
-    {"PLUCK", {"DEC", "BRIT", "PICK", "DAMP", "STIF", "NOIS", "BODY", "DRIV"}, {80, 80, 50, 40, 0, 50, 0, 0}},
-    {"NOISE", {"COLR", "RES", "TRCK", "CRSH", "GRAN", "TONE", "WDTH", "DRIV"}, {64, 60, 100, 0, 0, 0, 40, 0}},
+    {"SAW",   {"SHAPE 1", "SHAPE 2", "DETUNE", "OSC MIX", "OSC2 OCT", "WIDTH", "SUB", "NOISE"}, {0, 0, 72, 64, 64, 64, 0, 0}},
+    {"PULSE", {"WIDTH", "PWM RATE", "PWM DEPTH", "SYNC", "RING MOD", "SUB", "NOISE", "CRUSH"}, {64, 40, 30, 0, 0, 0, 0, 0}},
+    {"SUPER", {"DETUNE", "MIX", "VOICES", "SHAPE", "SUB", "OCTAVE", "NOISE", "DRIVE"}, {50, 90, 127, 0, 0, 64, 0, 0}},
+    {"FM",    {"RATIO A", "AMOUNT A", "RATIO B", "AMOUNT B", "FEEDBACK", "ROUTING", "MOD DECAY", "MOD SUST"}, {32, 50, 64, 0, 0, 0, 50, 40}},
+    {"WAVE",  {"POSITION", "SCAN RATE", "SCAN DEPTH", "OSC2 OCT", "DETUNE", "OSC2 MIX", "FOLD", "CRUSH"}, {0, 40, 0, 64, 70, 0, 0, 0}},
+    {"VOX",   {"VOWEL", "FORMANT", "BREATH", "RESONANCE", "VIB DEPTH", "VIB RATE", "BRIGHT", "CHORUS"}, {0, 64, 20, 60, 0, 64, 40, 0}},
+    {"PLUCK", {"DECAY", "BRIGHT", "PICK POS", "DAMPING", "STIFFNESS", "NOISE", "BODY", "DRIVE"}, {80, 80, 50, 40, 0, 50, 0, 0}},
+    {"NOISE", {"COLOR", "RESONANCE", "TRACKING", "CRUSH", "GRAIN", "TONE", "LP MIX", "DRIVE"}, {64, 60, 100, 0, 0, 0, 40, 0}},
 };
 
 static const uint8_t kDefaultKit[kTracks] = {mSAW, mPULSE, mSUPER, mFM, mWAVE, mPLUCK};
@@ -100,10 +118,38 @@ inline const char* trackParamName(int machine, int p)
 }
 
 // ---- kit settings (TRACK page + arpeggiator), stored with the kit, not host parameters ----
-enum KitField { kfOut = 0, kfMidi, kfTrnsp, kfLegato, kfKeyTrk, kfArpMode, kfArpOct, kfArpSpd, kfArpChord, kKitFields };
-static const char* const kKitNames[kKitFields] = {"OUT", "MIDI", "TRNSP", "LEGATO", "KEYTRK", "ARP", "OCT", "SPEED", "CHORD"};
-static const int kKitMax[kKitFields] = {3, 16, 48, 1, 4, 5, 3, 5, 9};
-static const uint8_t kKitDefault[kKitFields] = {0, 0, 24, 0, 2, 0, 0, 1, 0};
+// kfKeyTrk is kept for old banks only: key tracking is now the FILTER parameter KEY TRK.
+enum KitField { kfOut = 0, kfMidi, kfTrnsp, kfLegato, kfKeyTrk, kfArpMode, kfArpOct, kfArpSpd, kfArpChord, kfScale, kfRoot, kKitFields };
+static const char* const kKitNames[kKitFields] = {"OUTPUT", "MIDI CH", "PITCH", "LEGATO", "KEYTRK", "ARP", "OCTAVES", "SPEED", "CHORD", "SCALE", "ROOT"};
+static const int kKitMax[kKitFields] = {3, 16, 48, 1, 4, 5, 3, 5, 9, 15, 11};
+static const uint8_t kKitDefault[kKitFields] = {0, 0, 24, 0, 2, 0, 0, 1, 0, 0, 0};
+
+// scales: bit n set = semitone n above the root belongs to the scale
+static constexpr int kScales = 16;
+struct ScaleDef { const char* name; uint16_t mask; };
+static const ScaleDef kScaleDefs[kScales] = {
+    {"OFF", 0xFFF},          {"MAJOR", 0xAB5},        {"MINOR", 0x5AD},        {"DORIAN", 0x6AD},
+    {"PHRYGIAN", 0x5AB},     {"LYDIAN", 0xAD5},       {"MIXOLYD", 0x6B5},      {"LOCRIAN", 0x56B},
+    {"HARM MIN", 0x9AD},     {"MELO MIN", 0xAAD},     {"PENTA MAJ", 0x295},    {"PENTA MIN", 0x4A9},
+    {"BLUES", 0x4E9},        {"WHOLE", 0x555},        {"HIRAJOSHI", 0x18D},    {"ARABIC", 0x9B3},
+};
+static const char* const kNoteNames12[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+inline bool inScale(int note, int scale, int root)
+{
+    if (scale <= 0 || scale >= kScales) return true;
+    const int pc = ((note - root) % 12 + 12) % 12;
+    return (kScaleDefs[scale].mask >> pc) & 1;
+}
+// nearest note of the scale (ties go down)
+inline int quantizeNote(int note, int scale, int root)
+{
+    if (scale <= 0 || scale >= kScales) return note;
+    for (int d = 0; d < 12; ++d) {
+        if (inScale(note - d, scale, root)) return note - d;
+        if (inScale(note + d, scale, root)) return note + d;
+    }
+    return note;
+}
 static const char* const kArpModes[6] = {"OFF", "UP", "DOWN", "UP-DN", "RAND", "ORDER"};
 static const float kArpSpeeds[6] = {0.25f, 0.5f, 1.f, 2.f, 3.f, 4.f};  // length of one arp note, in steps
 static const char* const kArpSpeedNames[6] = {"1/4", "1/2", "1", "2", "3", "4"}; // length of one arp note, in steps
@@ -120,7 +166,9 @@ inline const char* kitValueText(int field, int v, char* buf, int n)
     switch (field) {
     case kfOut: return out[v < 0 ? 0 : (v > 3 ? 3 : v)];
     case kfMidi: if (v <= 0) return "AUTO"; std::snprintf(buf, n, "CH %d", v); return buf;
-    case kfTrnsp: std::snprintf(buf, n, "%+d", v - 24); return buf;
+    case kfTrnsp: if (v == 24) return "0 ST"; std::snprintf(buf, n, "%+d ST", v - 24); return buf;
+    case kfScale: return kScaleDefs[v < 0 ? 0 : (v >= kScales ? kScales - 1 : v)].name;
+    case kfRoot: return kNoteNames12[v < 0 ? 0 : (v > 11 ? 11 : v)];
     case kfLegato: return v ? "ON" : "OFF";
     case kfKeyTrk: return kt[v < 0 ? 0 : (v > 4 ? 4 : v)];
     case kfArpMode: return kArpModes[v < 0 ? 0 : (v > 5 ? 5 : v)];
@@ -132,7 +180,14 @@ inline const char* kitValueText(int field, int v, char* buf, int n)
 
 // ---- LFO ----
 static const char* const kLfoShapes[6] = {"TRI", "SINE", "SQR", "SAW+", "SAW-", "RND"};
-static const char* const kLfoTypes[3] = {"FREE", "TRIG", "HOLD"};
+static const char* const kLfoTypes[3] = {"FREE", "RETRIG", "HOLD"};
+// tempo-synced LFO: length of one cycle, in beats
+static constexpr int kLfoSyncDivs = 16;
+static const float kLfoSyncBeats[kLfoSyncDivs] = {64.f, 32.f, 16.f, 8.f, 4.f, 2.f, 1.5f, 1.f, 2.f / 3.f, 0.75f, 0.5f, 1.f / 3.f, 0.25f, 1.f / 6.f, 0.125f, 0.0625f};
+static const char* const kLfoSyncNames[kLfoSyncDivs] = {"16 BARS", "8 BARS", "4 BARS", "2 BARS", "1 BAR", "1/2", "1/4D", "1/4", "1/4T", "1/8D", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/64"};
+inline int lfoSyncDivIndex(int v) { const int i = v * kLfoSyncDivs / 128; return i < 0 ? 0 : (i >= kLfoSyncDivs ? kLfoSyncDivs - 1 : i); }
+inline bool lfoSynced(float syncParam) { return syncParam >= 64.f; }
+inline float lfoFreeHz(float rate) { return 0.03f * std::pow(1000.f, (rate < 0 ? 0 : (rate > 127 ? 127 : rate)) / 127.f); }
 inline int lfoShapeIndex(int v) { return v * 6 / 128; }
 inline int lfoTypeIndex(int v) { return v * 3 / 128; }
 inline int lfoDestIndex(int v) { return v * (kLfoDests + 1) / 128; }               // 0..31 params, 32 = PITCH

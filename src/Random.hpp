@@ -17,8 +17,8 @@ struct RandGen {
 inline float& tparam(float* values, int t, int p) { return values[t * kTrackParams + p]; }
 
 // scales used to keep random melodies musical
-struct ScaleDef { int n; int s[7]; };
-static const ScaleDef kRndScales[] = {
+struct RndScale { int n; int s[7]; };
+static const RndScale kRndScales[] = {
     {5, {0, 3, 5, 7, 10}},          // minor pentatonic
     {7, {0, 2, 3, 5, 7, 8, 10}},    // natural minor
     {7, {0, 2, 3, 5, 7, 9, 10}},    // dorian
@@ -61,14 +61,14 @@ inline void randomizeSound(float* values, int t, int m, RandGen& r)
     tparam(values, t, tpPAN) = (float)clampi(64 + (role == 0 ? 0 : r.range(-35, 35)), 0, 127);
     tparam(values, t, tpPORT) = r.chance(0.4f) ? (float)r.range(10, 50) : 0.f;
     // filter
-    tparam(values, t, tpBASE) = r.chance(0.7f) ? 0.f : (float)r.range(0, 40);
-    tparam(values, t, tpWDTH) = (float)r.range(role == 0 ? 35 : 50, 115);
-    tparam(values, t, tpHPQ) = 0.f;
-    tparam(values, t, tpLPQ) = (float)r.range(0, role == 0 ? 100 : 70);
+    tparam(values, t, tpCUTOFF) = (float)r.range(role == 0 ? 35 : 50, 115);
+    tparam(values, t, tpRESO) = (float)r.range(0, role == 0 ? 100 : 70);
+    tparam(values, t, tpFTYPE) = (float)filterTypeValue(r.chance(0.75f) ? (r.chance(0.5f) ? 0 : 1) : r.range(2, 4));
+    tparam(values, t, tpLOWCUT) = r.chance(0.7f) ? 0.f : (float)r.range(0, 40);
     tparam(values, t, tpFATK) = r.chance(0.8f) ? 0.f : (float)r.range(10, 70);
     tparam(values, t, tpFDEC) = (float)r.range(20, 90);
-    tparam(values, t, tpBOF) = 64.f;
-    tparam(values, t, tpWOF) = (float)clampi(64 + r.range(-10, 50), 0, 127);
+    tparam(values, t, tpFENV) = (float)clampi(64 + r.range(-10, 50), 0, 127);
+    tparam(values, t, tpKEYTRK) = (float)r.range(32, 96);
     // effects
     tparam(values, t, tpAMD) = r.chance(0.1f) ? (float)r.range(10, 60) : 0.f;
     tparam(values, t, tpAMF) = (float)r.range(20, 110);
@@ -81,14 +81,14 @@ inline void randomizeSound(float* values, int t, int m, RandGen& r)
     // LFOs: LFO 1 sometimes on the filter, LFO 2 sometimes vibrato, LFO 3 rarely anything
     for (int l = 0; l < 3; ++l) {
         const int b = kLfoBase[l];
-        for (int k = 0; k < 6; ++k) tparam(values, t, b + k) = kFxDefaults[b - 8 + k];
+        for (int k = 0; k < 8; ++k) tparam(values, t, lfoParam(l, k)) = kFxDefaults[lfoParam(l, k) - 8];
         const float pr = l == 0 ? 0.35f : (l == 1 ? 0.2f : 0.1f);
         if (!r.chance(pr)) continue;
         tparam(values, t, b) = (float)r.range(10, 100);
         tparam(values, t, b + 1) = (float)r.range(8, 50);
         tparam(values, t, b + 2) = (float)r.range(0, 127);
         tparam(values, t, b + 3) = (float)r.range(0, 127);
-        const int dest = l == 0 ? tpWDTH : (l == 1 ? kLfoDests : r.range(0, kLfoDests - 1));
+        const int dest = l == 0 ? tpCUTOFF : (l == 1 ? kLfoDests : r.range(0, kLfoDests - 1));
         tparam(values, t, b + 4) = (float)lfoDestValue(dest);
         if (l == 1) { tparam(values, t, b) = (float)r.range(60, 85); tparam(values, t, b + 1) = (float)r.range(5, 20); tparam(values, t, b + 2) = 25.f; }
     }
@@ -102,7 +102,7 @@ inline void randomizeSequence(Pattern& pat, int t, int machine, RandGen& r, int 
     const int role = trackRole(t, machine);
     if (root < 0) root = r.range(0, 11);
     if (scale < 0) scale = r.range(0, kNumRndScales - 1);
-    const ScaleDef& sc = kRndScales[scale];
+    const RndScale& sc = kRndScales[scale];
     const int base = (role == 0 ? 36 : (role == 2 ? 60 : 60)) + root - (root > 6 ? 12 : 0);
     const int len = pat.trackLen[t] ? pat.trackLen[t] : 16;
     // a short motif repeated with variations sounds better than pure noise
@@ -140,7 +140,7 @@ inline void randomizeSequence(Pattern& pat, int t, int machine, RandGen& r, int 
         if (!f) continue;
         if (r.chance(0.04f)) pat.ratch[t][s] = (uint8_t)kRatchValues[r.range(1, 2)];
         if (r.chance(0.06f)) pat.cond[t][s] = (uint8_t)r.range(1, 6);
-        if (r.chance(0.12f)) pat.locks[t][s][tpWDTH] = (uint8_t)r.range(40, 120);
+        if (r.chance(0.12f)) pat.locks[t][s][tpCUTOFF] = (uint8_t)r.range(40, 120);
     }
 }
 

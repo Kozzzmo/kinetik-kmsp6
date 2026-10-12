@@ -9,6 +9,8 @@
 #include "Fonts.hpp"
 #include "License.hpp"
 #include "MonoShared.hpp"
+#include "MasterFx.hpp"
+#include "Voice.hpp"
 #include <cstdlib>
 #include <algorithm>
 #include <dirent.h>
@@ -36,13 +38,13 @@ struct R {
 };
 
 enum Page { pgSynth, pgAmp, pgFilter, pgEfx, pgLfo1, pgLfo2, pgLfo3, pgTrack, pgArp, kPages };
-static const char* const kPageNames[kPages] = {"SYNTH", "AMP", "FILTER", "EFX", "LFO 1", "LFO 2", "LFO 3", "TRACK", "ARP"};
+static const char* const kPageNames[kPages] = {"SYNTH", "AMP", "FILTER", "FX", "LFO 1", "LFO 2", "LFO 3", "TRACK", "ARP"};
 enum MPage { mpEcho, mpReverb, mpMaster };
 enum Mode { mdTrig, mdAccent, mdSlide, mdNote, mdLen, mdRatch, mdCond, mdTime, kModes };
 static const char* const kModeNames[kModes] = {"TRIG", "ACCENT", "SLIDE", "NOTE", "LEN", "RATCH", "COND", "TIME"};
 
 enum DragKind { dkNone, dkTrackKnob, dkMasterKnob, dkTempo, dkSwing, dkAccent, dkKit, dkStepNote, dkStepLen, dkKey };
-enum Overlay { ovNone, ovPicker, ovPresets, ovHelp, ovSkins, ovSave, ovLicense };
+enum Overlay { ovNone, ovPicker, ovPresets, ovHelp, ovSkins, ovSave, ovLicense, ovDest };
 enum DragExtra { dkResize = 100 };
 
 static const char* const kMachineShort[kMachines] = {
@@ -63,7 +65,7 @@ public:
         for (int i = 0; i < kTotalParams; ++i) values[i] = 0.f;
         for (int t = 0; t < kTracks; ++t)
             for (int p = 0; p < kTrackParams; ++p) values[t * kTrackParams + p] = trackParamDefault(t, p);
-        for (int i = 0; i < 20; ++i) values[kGlobalBase + gECHO_TIME + i] = kMasterDefaults[i];
+        for (int i = 0; i < kMasterCount; ++i) values[kGlobalBase + gECHO_TIME + i] = kMasterDefaults[i];
         values[kGlobalBase + gTEMPO] = 120;
         values[kGlobalBase + gOUT_STEP] = -1;
         bank.reset(new Bank());
@@ -230,23 +232,46 @@ protected:
         case pgAmp: return 8 + k;
         case pgFilter: return 16 + k;
         case pgEfx: return 24 + k;
-        case pgLfo1: return k < 6 ? tpLFO1 + k : -1;
-        case pgLfo2: return k < 6 ? tpLFO2 + k : -1;
-        case pgLfo3: return k < 6 ? tpLFO3 + k : -1;
+        case pgLfo1: return lfoParam(0, k);
+        case pgLfo2: return lfoParam(1, k);
+        case pgLfo3: return lfoParam(2, k);
         default: return -1; // TRACK / ARP pages: kit settings, see kitField()
         }
     }
     int kitField(int k) const
     {
-        if (page == pgTrack) return k < 5 ? k : -1;
+        static const int trackFields[8] = {kfOut, kfMidi, kfTrnsp, kfLegato, kfScale, kfRoot, -1, -1};
+        if (page == pgTrack) return trackFields[k & 7];
         if (page == pgArp) return k < 4 ? kfArpMode + k : -1;
         return -1;
     }
     int masterParam(int mp, int k) const
     {
-        if (mp == mpEcho) return k < 6 ? gECHO_TIME + k : -1;
-        if (mp == mpReverb) return k < 6 ? gREV_SIZE + k : -1;
+        if (mp == mpEcho) return k < 6 ? gECHO_TIME + k : (k == 6 ? gECHO_MODEL : gECHO_MOD);
+        if (mp == mpReverb) return k < 6 ? gREV_SIZE + k : (k == 6 ? gREV_MODEL : gREV_MOD);
         return gEQ_LOW + k;
+    }
+
+    // which LFO (0..2) and which of its 8 knobs (0..7) a parameter is, or -1
+    static int lfoOf(int p, int& k)
+    {
+        for (int l = 0; l < 3; ++l) for (int i = 0; i < 8; ++i) if (lfoParam(l, i) == p) { k = i; return l; }
+        return -1;
+    }
+    static std::string hzText(float hz)
+    {
+        char b[24];
+        if (hz >= 1000.f) std::snprintf(b, sizeof(b), "%.1fk", hz / 1000.f);
+        else std::snprintf(b, sizeof(b), "%d", (int)std::lround(hz));
+        return b;
+    }
+    // destination name of LFO l of track t (dest index d)
+    std::string lfoDestName(int t, int l, int d) const
+    {
+        if (d >= kLfoDests) return "PITCH";
+        const int trk = lfoTrackIndex((int)std::lround(values[t * kTrackParams + kLfoBase[l] + 5]));
+        const int tt = trk == 0 ? t : trk - 1;
+        return trackParamName(machineOf(tt), d);
     }
 
     std::string valueText(int t, int p, float v) const
@@ -257,23 +282,26 @@ protected:
             if (iv == 64) return "C";
             std::snprintf(b, sizeof(b), "%c%d", iv < 64 ? 'L' : 'R', std::abs(iv - 64)); return b;
         }
-        if (p == tpEQG || p == tpBOF || p == tpWOF) { std::snprintf(b, sizeof(b), "%+d", iv - 64); return b; }
+        if (p == tpEQG || p == tpFENV) { std::snprintf(b, sizeof(b), "%+d", iv - 64); return b; }
         if (p == tpPORT && iv == 0) return "OFF";
-        if (p >= tpLFO1 && p < tpLFO1 + 18) {
-            const int l = (p - tpLFO1) / 6, k = (p - tpLFO1) % 6;
-            if (k == 2) return kLfoShapes[lfoShapeIndex(iv)];
-            if (k == 3) return kLfoTypes[lfoTypeIndex(iv)];
-            if (k == 5) {
-                const int tt = lfoTrackIndex(iv);
-                if (tt == 0) return "SELF";
-                std::snprintf(b, sizeof(b), "T%d", tt); return b;
-            }
-            if (k == 4) {
-                const int d = lfoDestIndex(iv);
-                if (d >= kLfoDests) return "PITCH";
-                const int trk = lfoTrackIndex((int)std::lround(values[t * kTrackParams + kLfoBase[l] + 5]));
-                const int tt = trk == 0 ? t : trk - 1;
-                return trackParamName(machineOf(tt), d);
+        if (p == tpCUTOFF || p == tpEQF) return hzText(p == tpEQF ? expmap(v / 127.f, 40.f, 16000.f) : cutoffHz(v));
+        if (p == tpLOWCUT) return iv == 0 ? std::string("OFF") : hzText(cutoffHz(v));
+        if (p == tpFTYPE) return kFilterTypeNames[filterTypeIndex(iv)];
+        if (p == tpKEYTRK) { std::snprintf(b, sizeof(b), "%d%%", (int)std::lround(v / 127.f * 100.f)); return b; }
+        if (p == tpAMF) return hzText(expmap(v / 127.f, 0.5f, 2000.f));
+        int lk = 0; const int l = lfoOf(p, lk);
+        if (l >= 0) {
+            switch (lk) {
+            case 0:
+                if (lfoSynced(values[t * kTrackParams + lfoParam(l, 6)])) return kLfoSyncNames[lfoSyncDivIndex(iv)];
+                { const float hz = lfoFreeHz(v); std::snprintf(b, sizeof(b), hz < 10.f ? "%.2f" : "%.1f", hz); return b; }
+            case 2: return kLfoShapes[lfoShapeIndex(iv)];
+            case 3: return kLfoTypes[lfoTypeIndex(iv)];
+            case 4: return lfoDestName(t, l, lfoDestIndex(iv));
+            case 5: { const int tt = lfoTrackIndex(iv); if (tt == 0) return "SELF"; std::snprintf(b, sizeof(b), "T%d", tt); return b; }
+            case 6: return lfoSynced(v) ? "TEMPO" : "FREE";
+            case 7: std::snprintf(b, sizeof(b), "%d\xC2\xB0", (int)std::lround(v / 128.f * 360.f)); return b;
+            default: break;
             }
         }
         if (p < 8 && machineOf(t) == mSAW && p == 4) { std::snprintf(b, sizeof(b), "%+d", (int)std::lround(iv / 127.f * 4.f) - 2); return b; }
@@ -292,6 +320,13 @@ protected:
         char b[32];
         const int iv = (int)std::lround(v);
         if (g == gECHO_TIME) return kEchoNames[echoDivIndex(iv)];
+        if (g == gECHO_MODEL) return kEchoModelNames[echoModelIndex(iv)];
+        if (g == gREV_MODEL) return kReverbModelNames[reverbModelIndex(iv)];
+        if (g == gECHO_LEV || g == gREV_LEV) {
+            const float gn = fxReturnGain(v);
+            if (gn < 0.001f) return "OFF";
+            std::snprintf(b, sizeof(b), "%+.1fdB", 20.f * std::log10(gn)); return b;
+        }
         if (g == gREV_GATE && iv == 0) return "OFF";
         if (g == gEQ_LOW || g == gEQ_HIGH) { std::snprintf(b, sizeof(b), "%+d", iv - 64); return b; }
         std::snprintf(b, sizeof(b), "%d", iv); return b;
@@ -614,6 +649,7 @@ protected:
         if (overlay == ovSkins) drawSkins();
         if (overlay == ovSave) drawSave();
         if (overlay == ovLicense) drawLicense();
+        if (overlay == ovDest) drawDestMenu();
         drawGrip();
     }
 
@@ -697,6 +733,543 @@ protected:
         }
     }
 
+    // ------------------------------------------------------------------ LCD graphics
+    // The upper display draws what the knobs of the page do (waveform, envelope, filter curve...)
+    // instead of repeating their values.
+    static Color withAlpha(Color c, float a) { c.alpha *= a; return c; }
+
+    // value shown for track parameter pi: lock of the edited step, value being recorded, else the base value
+    float shownValue(int pi)
+    {
+        if (pi < 0) return 0.f;
+        if (lockStep >= 0) { const uint8_t l = pat().locks[selTrack][lockStep][pi]; if (l != kNoLock) return l; }
+        if (recording() && drag == dkTrackKnob && recDirty && pageParam(page, dragIndex) == pi) return recVal;
+        return tp(selTrack, pi);
+    }
+    bool shownLocked(int pi) { return lockStep >= 0 && pi >= 0 && pat().locks[selTrack][lockStep][pi] != kNoLock; }
+    Color ink(int pi) { return shownLocked(pi) ? th->lock : th->lcdText; }
+
+    void lcdGrid(const R& g, int nx, int ny)
+    {
+        const Color c = withAlpha(th->lcdDim, 0.22f);
+        for (int i = 1; i < nx; ++i) { beginPath(); rect(g.x + g.w * i / nx, g.y, 1.f, g.h); fillColor(c); fill(); }
+        for (int i = 1; i < ny; ++i) { beginPath(); rect(g.x, g.y + g.h * i / ny, g.w, 1.f); fillColor(c); fill(); }
+    }
+    // polyline of n points (xs, ys), optional fill down to baseY
+    void lcdCurve(const float* xs, const float* ys, int n, const Color& c, float width, float baseY = -1.f)
+    {
+        if (n < 2) return;
+        if (baseY >= 0.f) {
+            beginPath(); moveTo(xs[0], baseY);
+            for (int i = 0; i < n; ++i) lineTo(xs[i], ys[i]);
+            lineTo(xs[n - 1], baseY); closePath();
+            fillPaint(linearGradient(0, baseY - 90.f, 0, baseY, withAlpha(c, 0.30f), withAlpha(c, 0.04f))); fill();
+        }
+        if (th->glow) {
+            beginPath(); moveTo(xs[0], ys[0]); for (int i = 1; i < n; ++i) lineTo(xs[i], ys[i]);
+            strokeColor(withAlpha(c, 0.25f)); strokeWidth(width + 4.f); lineJoin(ROUND); lineCap(ROUND); stroke();
+        }
+        beginPath(); moveTo(xs[0], ys[0]); for (int i = 1; i < n; ++i) lineTo(xs[i], ys[i]);
+        strokeColor(c); strokeWidth(width); lineJoin(ROUND); lineCap(ROUND); stroke();
+    }
+    void lcdTag(float x, float y, const char* name, const std::string& val, const Color& c, int align = ALIGN_LEFT)
+    {
+        label(x, y, name, 9.5f, th->lcdDim, align | ALIGN_MIDDLE, fnMono);
+        number(x, y + 15.f, val.c_str(), 13.f, c, align | ALIGN_MIDDLE, fnMono);
+    }
+
+    void drawPageGraphic(const R& g)
+    {
+        switch (page) {
+        case pgSynth: drawScope(g); break;
+        case pgAmp: drawAmpGraphic(g); break;
+        case pgFilter: drawFilterGraphic(g); break;
+        case pgEfx: drawFxGraphic(g); break;
+        case pgLfo1: case pgLfo2: case pgLfo3: drawLfoGraphic(g, page - pgLfo1); break;
+        case pgTrack: drawTrackGraphic(g); break;
+        default: drawArpGraphic(g); break;
+        }
+    }
+
+    // ---- SYNTH: oscilloscope of the machine, rendered by a private copy of the voice
+    MonoVoice scopeVoice; bool scopeReady = false; float scopeKey[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
+    std::vector<float> scope;
+    void updateScope()
+    {
+        float key[9];
+        for (int i = 0; i < 8; ++i) key[i] = std::round(shownValue(i));
+        key[8] = (float)machineOf(selTrack);
+        if (scopeReady && std::equal(key, key + 9, scopeKey)) return;
+        std::copy(key, key + 9, scopeKey);
+        if (!scopeReady) { scopeVoice.init(48000.f); scopeReady = true; }
+        scopeVoice.machine = -1;
+        scopeVoice.setMachine((int)key[8]);
+        scopeVoice.rng.s = 0x1234567u;
+        scopeVoice.control(key);
+        scopeVoice.noteOn(true);
+        const int N = 6144;
+        std::vector<float> buf(N);
+        for (int i = 0; i < N; i += 64) scopeVoice.render(buf.data() + i, 64, 110.f, 110.f);
+        scope.assign(buf.end() - 1309, buf.end());       // three periods of 110 Hz
+    }
+    void drawScope(const R& g)
+    {
+        lcdGrid(g, 6, 4);
+        beginPath(); rect(g.x, g.cy(), g.w, 1.f); fillColor(withAlpha(th->lcdDim, 0.5f)); fill();
+        if (machineOf(selTrack) == mOFF) { label(g.cx(), g.cy(), "TRACK OFF", 14.f, th->lcdDim); return; }
+        updateScope();
+        float pk = 0.05f;
+        for (float v : scope) pk = std::max(pk, std::fabs(v));
+        const int n = 220;
+        float xs[n], ys[n];
+        for (int i = 0; i < n; ++i) {
+            const float v = scope[(size_t)(i * (scope.size() - 1) / (n - 1))] / pk;
+            xs[i] = g.x + g.w * i / (n - 1);
+            ys[i] = g.cy() - v * g.h * 0.44f;
+        }
+        bool anyLock = false; for (int i = 0; i < 8; ++i) anyLock = anyLock || shownLocked(i);
+        lcdCurve(xs, ys, n, anyLock ? th->lock : th->lcdText, 2.f);
+    }
+
+    // ---- AMP: AHDSR envelope, level, pan and glide
+    void drawAmpGraphic(const R& g)
+    {
+        const R e{g.x, g.y + 4, g.w - 196, g.h - 26};
+        lcdGrid(e, 8, 3);
+        const float atk = shownValue(tpATK) > 0.5f ? expmap(shownValue(tpATK) / 127.f, 0.0005f, 5.f) : 0.001f;
+        const float hold = shownValue(tpHOLD) / 127.f * 2.f;
+        const float dec = expmap(shownValue(tpDEC) / 127.f, 0.005f, 6.f);
+        const float sus = shownValue(tpSUS) / 127.f;
+        const float rel = expmap(shownValue(tpREL) / 127.f, 0.005f, 8.f);
+        // time axis: compressed (each stage gets room even when short)
+        auto tw = [](float s) { return std::log1p(s * 12.f); };
+        const float wA = tw(atk), wH = tw(hold), wD = tw(dec * 0.5f), wS = 0.9f, wR = tw(rel * 0.5f);
+        const float tot = wA + wH + wD + wS + wR, sc = e.w / tot;
+        const float x0 = e.x, xA = x0 + wA * sc, xH = xA + wH * sc, xD = xH + wD * sc, xS = xD + wS * sc, xR = e.x + e.w;
+        const float top = e.y + 6, bot = e.y + e.h, ys = bot - (bot - top) * sus;
+        const int n = 64;
+        std::vector<float> X, Y;
+        X.push_back(x0); Y.push_back(bot);
+        X.push_back(xA); Y.push_back(top);
+        X.push_back(xH); Y.push_back(top);
+        for (int i = 1; i <= n; ++i) {   // exponential decay towards the sustain level
+            const float u = (float)i / n;
+            X.push_back(xH + (xD - xH) * u); Y.push_back(ys + (top - ys) * std::exp(-5.f * u));
+        }
+        X.push_back(xS); Y.push_back(ys);
+        for (int i = 1; i <= n; ++i) {
+            const float u = (float)i / n;
+            X.push_back(xS + (xR - xS) * u); Y.push_back(bot - (bot - ys) * std::exp(-5.f * u));
+        }
+        bool lk = false; for (int p = tpATK; p <= tpREL; ++p) lk = lk || shownLocked(p);
+        lcdCurve(X.data(), Y.data(), (int)X.size(), lk ? th->lock : th->lcdText, 2.f, bot);
+        // stage names and times
+        auto secs = [](float s) { char b[16]; if (s < 1.f) std::snprintf(b, sizeof(b), "%dms", (int)std::lround(s * 1000.f)); else std::snprintf(b, sizeof(b), "%.1fs", s); return std::string(b); };
+        const float ly = g.y + g.h - 8;
+        label(x0, ly, ("A " + secs(atk)).c_str(), 9.5f, ink(tpATK), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        if (hold > 0.005f) label((xA + xH) * 0.5f, ly - 12, ("H " + secs(hold)).c_str(), 9.5f, ink(tpHOLD), ALIGN_CENTER | ALIGN_MIDDLE, fnMono);
+        label(std::max((xH + xD) * 0.5f, x0 + 90.f), ly, ("D " + secs(dec)).c_str(), 9.5f, ink(tpDEC), ALIGN_CENTER | ALIGN_MIDDLE, fnMono);
+        char b[24]; std::snprintf(b, sizeof(b), "S %d%%", (int)std::lround(sus * 100.f));
+        label((xD + xS) * 0.5f, ly, b, 9.5f, ink(tpSUS), ALIGN_CENTER | ALIGN_MIDDLE, fnMono);
+        label((xS + xR) * 0.5f, ly, ("R " + secs(rel)).c_str(), 9.5f, ink(tpREL), ALIGN_CENTER | ALIGN_MIDDLE, fnMono);
+
+        // right panel: level meter, pan, glide
+        const float rx = g.x + g.w - 180;
+        const float lv = shownValue(tpVOL) / 127.f;
+        const R mtr{rx, g.y + 6, 14, g.h - 12};
+        frame(mtr, withAlpha(th->lcdDim, 0.6f), 1.f);
+        box({mtr.x + 2, mtr.y + 2 + (mtr.h - 4) * (1.f - lv), mtr.w - 4, (mtr.h - 4) * lv}, ink(tpVOL), 1.f);
+        label(rx + 22, g.y + 12, "LEVEL", 9.5f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        const float db = lv > 0.001f ? 20.f * std::log10(lv * lv * 0.9f / 0.567f) : -99.f;
+        std::snprintf(b, sizeof(b), lv > 0.001f ? "%+.1fdB" : "OFF", db);
+        number(rx + 22, g.y + 27, b, 13.f, ink(tpVOL), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        // pan: dot on a L-R line
+        const float pan = shownValue(tpPAN) / 127.f, py = g.y + 52, px0 = rx + 26, px1 = g.x + g.w - 8;
+        beginPath(); rect(px0, py, px1 - px0, 1.f); fillColor(withAlpha(th->lcdDim, 0.6f)); fill();
+        beginPath(); rect((px0 + px1) * 0.5f, py - 4, 1.f, 9.f); fillColor(withAlpha(th->lcdDim, 0.6f)); fill();
+        label(px0 - 6, py, "L", 9.f, th->lcdDim, ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
+        label(px1 + 2, py, "R", 9.f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        beginPath(); circle(px0 + (px1 - px0) * pan, py, 4.5f); fillColor(ink(tpPAN)); fill();
+        // glide: a slope from one note to the next
+        const float gl = shownValue(tpPORT);
+        const float gx0 = rx + 26, gx1 = g.x + g.w - 8, gy0 = g.y + g.h - 10, gy1 = g.y + 72;
+        label(rx + 22, g.y + 66, "", 9.f, th->lcdDim);
+        float GX[24], GY[24];
+        const float gt = gl > 0.5f ? 0.15f + 0.8f * (gl / 127.f) : 0.02f;
+        for (int i = 0; i < 24; ++i) {
+            const float u = (float)i / 23.f;
+            GX[i] = gx0 + (gx1 - gx0) * u;
+            const float k = u < 0.25f ? 0.f : std::min(1.f, (u - 0.25f) / (0.75f * gt));
+            GY[i] = gy0 + (gy1 - gy0) * (1.f - std::exp(-4.f * k)) / (1.f - std::exp(-4.f));
+        }
+        lcdCurve(GX, GY, 24, ink(tpPORT), 1.6f);
+        label(gx1, gy0 + 1, gl < 0.5f ? "GLIDE OFF" : "GLIDE", 9.f, th->lcdDim, ALIGN_RIGHT | ALIGN_BOTTOM, fnMono);
+    }
+
+    // ---- FILTER: frequency response of the multimode filter + low cut, with the envelope sweep
+    static float svfMag(int type, float f, float fc, float q)
+    {
+        const float w = f / fc, k = 1.f / q;
+        const float re = 1.f - w * w, im = k * w, den = std::sqrt(re * re + im * im);
+        switch (type) {
+        case 0: return 1.f / den;
+        case 1: { const float k2 = 1.f / 0.6f, re2 = 1.f - w * w, im2 = k2 * w; return 1.f / den / std::sqrt(re2 * re2 + im2 * im2); }
+        case 2: return w / den * std::sqrt(k) * 1.4f;
+        case 3: return w * w / den;
+        default: return std::fabs(1.f - w * w) / den;
+        }
+    }
+    float filterDb(float f, float cutHz, int type, float q, float lowHz) const
+    {
+        float m = svfMag(type, f, std::min(cutHz, 20000.f), q);
+        if (lowHz > 24.f) m *= svfMag(3, f, lowHz, 0.707f);
+        return 20.f * std::log10(std::max(m, 1e-6f));
+    }
+    void drawFilterGraphic(const R& g)
+    {
+        const R pl{g.x, g.y + 2, g.w - 150, g.h - 4};
+        lcdGrid(pl, 3, 4);
+        const float cut = shownValue(tpCUTOFF), q = 0.5f + shownValue(tpRESO) / 127.f * 17.f;
+        const int type = filterTypeIndex((int)shownValue(tpFTYPE));
+        const float lowHz = cutoffHz(shownValue(tpLOWCUT)), cutHz = cutoffHz(cut);
+        const float envOct = (shownValue(tpFENV) - 64.f) / 64.f * 7.f;
+        const float envHz = 20.f * std::exp2(clampf(cut / 127.f * 10.f + envOct, 0.f, 10.f));
+        auto fx = [&](float f) { return pl.x + pl.w * std::log2(f / 20.f) / 10.f; };
+        auto dy = [&](float db) { return pl.y + pl.h * (1.f - (clampf(db, -36.f, 24.f) + 36.f) / 60.f); };
+        // frequency labels
+        for (float f : {100.f, 1000.f, 10000.f}) {
+            label(fx(f) + 3, pl.y + pl.h - 7, f >= 1000.f ? (f >= 10000.f ? "10k" : "1k") : "100", 8.5f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+            beginPath(); rect(fx(f), pl.y, 1.f, pl.h); fillColor(withAlpha(th->lcdDim, 0.18f)); fill();
+        }
+        beginPath(); rect(pl.x, dy(0.f), pl.w, 1.f); fillColor(withAlpha(th->lcdDim, 0.45f)); fill();
+        const int n = 160;
+        float X[n], Y[n], Ye[n];
+        for (int i = 0; i < n; ++i) {
+            const float f = 20.f * std::exp2(10.f * i / (n - 1));
+            X[i] = fx(f);
+            Y[i] = dy(filterDb(f, cutHz, type, q, lowHz));
+            Ye[i] = dy(filterDb(f, envHz, type, q, lowHz));
+        }
+        // the envelope opens (or closes) the filter up to this second curve
+        if (std::fabs(envOct) > 0.1f) {
+            beginPath(); moveTo(X[0], Ye[0]); for (int i = 1; i < n; ++i) lineTo(X[i], Ye[i]);
+            strokeColor(withAlpha(ink(tpFENV), 0.45f)); strokeWidth(1.2f); stroke();
+            const float ex0 = fx(std::min(cutHz, envHz)), ex1 = fx(std::max(cutHz, envHz));
+            beginPath(); rect(ex0, pl.y, ex1 - ex0, pl.h); fillColor(withAlpha(ink(tpFENV), 0.07f)); fill();
+        }
+        bool lk = shownLocked(tpCUTOFF) || shownLocked(tpRESO) || shownLocked(tpFTYPE) || shownLocked(tpLOWCUT);
+        lcdCurve(X, Y, n, lk ? th->lock : th->lcdText, 2.2f, pl.y + pl.h);
+        // cutoff marker
+        const float cx = clampf(fx(cutHz), pl.x, pl.x + pl.w);
+        beginPath(); rect(cx, pl.y, 1.f, pl.h); fillColor(withAlpha(ink(tpCUTOFF), 0.7f)); fill();
+        label(std::min(cx + 4, pl.x + pl.w - 60), pl.y + 9, (hzText(cutHz) + " Hz").c_str(), 10.f, ink(tpCUTOFF), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        label(pl.x + 4, pl.y + 9, kFilterTypeNames[type], 10.f, ink(tpFTYPE), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+
+        // right: the filter envelope (attack / decay) and its amount
+        const R ev{g.x + g.w - 138, g.y + 4, 138, g.h - 30};
+        frame(ev, withAlpha(th->lcdDim, 0.35f), 2.f);
+        const float fa = shownValue(tpFATK) > 0.5f ? expmap(shownValue(tpFATK) / 127.f, 0.001f, 4.f) : 0.001f;
+        const float fd = expmap(shownValue(tpFDEC) / 127.f, 0.005f, 6.f);
+        auto tw = [](float s) { return std::log1p(s * 10.f); };
+        const float wa = tw(fa), wd = tw(fd) * 1.2f, sc = (ev.w - 12) / (wa + wd);
+        const float amt = (shownValue(tpFENV) - 64.f) / 64.f;
+        const float base = amt >= 0 ? ev.y + ev.h - 6 : ev.y + 6, peak = base - (ev.h - 12) * amt;
+        float EX[34], EY[34];
+        EX[0] = ev.x + 6; EY[0] = base;
+        EX[1] = ev.x + 6 + wa * sc; EY[1] = peak;
+        for (int i = 0; i < 32; ++i) {
+            const float u = (float)(i + 1) / 32.f;
+            EX[2 + i] = EX[1] + wd * sc * u; EY[2 + i] = base + (peak - base) * std::exp(-5.f * u);
+        }
+        lcdCurve(EX, EY, 34, ink(tpFENV), 1.6f);
+        char b[32]; std::snprintf(b, sizeof(b), "ENV %+d", (int)std::lround(shownValue(tpFENV) - 64.f));
+        label(ev.x, g.y + g.h - 14, b, 9.5f, ink(tpFENV), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        std::snprintf(b, sizeof(b), "KEY %d%%", (int)std::lround(shownValue(tpKEYTRK) / 127.f * 100.f));
+        label(ev.x + ev.w, g.y + g.h - 14, b, 9.5f, ink(tpKEYTRK), ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
+        std::snprintf(b, sizeof(b), "RESO %d", (int)std::lround(shownValue(tpRESO)));
+        label(pl.x + pl.w - 4, pl.y + 9, b, 10.f, ink(tpRESO), ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
+    }
+
+    // ---- FX: tremolo, EQ bell, crush + drive, sends
+    void drawFxGraphic(const R& g)
+    {
+        const float cw = (g.w - 30) / 4.f;
+        auto cell = [&](int i) { return R{g.x + i * (cw + 10), g.y + 2, cw, g.h - 20}; };
+        char b[32];
+        // tremolo
+        {
+            const R c = cell(0); frame(c, withAlpha(th->lcdDim, 0.35f), 2.f);
+            const float d = shownValue(tpAMD) / 127.f, hz = expmap(shownValue(tpAMF) / 127.f, 0.5f, 2000.f);
+            const float cyc = clampf(1.f + std::log2(hz + 1.f), 1.f, 9.f);
+            float X[90], Y[90];
+            for (int i = 0; i < 90; ++i) {
+                const float u = i / 89.f;
+                X[i] = c.x + 4 + (c.w - 8) * u;
+                const float a = 1.f - d * (0.5f - 0.5f * std::sin(kTwoPi * cyc * u));
+                Y[i] = c.y + c.h - 4 - (c.h - 8) * a;
+            }
+            lcdCurve(X, Y, 90, ink(tpAMD), 1.6f, c.y + c.h - 2);
+            std::snprintf(b, sizeof(b), d > 0.004f ? "%s Hz" : "OFF", hzText(hz).c_str());
+            label(c.x, g.y + g.h - 8, "TREMOLO", 9.5f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+            label(c.x + c.w, g.y + g.h - 8, b, 9.5f, ink(tpAMF), ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
+        }
+        // EQ bell
+        {
+            const R c = cell(1); frame(c, withAlpha(th->lcdDim, 0.35f), 2.f);
+            const float f0 = expmap(shownValue(tpEQF) / 127.f, 40.f, 16000.f), db = (shownValue(tpEQG) - 64.f) / 64.f * 18.f;
+            beginPath(); rect(c.x + 2, c.cy(), c.w - 4, 1.f); fillColor(withAlpha(th->lcdDim, 0.5f)); fill();
+            float X[80], Y[80];
+            for (int i = 0; i < 80; ++i) {
+                const float u = i / 79.f, f = 20.f * std::exp2(10.f * u);
+                const float o = std::log2(f / f0);
+                X[i] = c.x + 4 + (c.w - 8) * u;
+                Y[i] = c.cy() - db * std::exp(-o * o * 1.6f) / 18.f * (c.h * 0.42f);
+            }
+            lcdCurve(X, Y, 80, ink(tpEQG), 1.8f);
+            std::snprintf(b, sizeof(b), "%+.0fdB %s", db, hzText(f0).c_str());
+            label(c.x, g.y + g.h - 8, "EQ", 9.5f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+            label(c.x + c.w, g.y + g.h - 8, b, 9.5f, ink(tpEQF), ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
+        }
+        // crush (steps) + drive (soft clipping) on one sine cycle
+        {
+            const R c = cell(2); frame(c, withAlpha(th->lcdDim, 0.35f), 2.f);
+            const float dr = shownValue(tpDIST) / 127.f, cr = shownValue(tpSRR);
+            const int hold = cr > 0.5f ? (int)expmap(cr / 127.f, 1.f, 64.f) : 1;
+            const int n = 96;
+            float X[n], Y[n], Xs[n], Ys[n];
+            float held = 0.f;
+            for (int i = 0; i < n; ++i) {
+                const float u = i / (n - 1.f);
+                const float s = std::sin(kTwoPi * u) * 1.15f;
+                Xs[i] = X[i] = c.x + 4 + (c.w - 8) * u;
+                Ys[i] = c.cy() - s * c.h * 0.36f;
+                float y = drive(s * 0.8f, dr);
+                if (hold > 1) { if (i % std::max(1, hold / 4 + 1) == 0) held = y; y = held; }
+                Y[i] = c.cy() - y * c.h * 0.42f;
+            }
+            beginPath(); moveTo(Xs[0], Ys[0]); for (int i = 1; i < n; ++i) lineTo(Xs[i], Ys[i]);
+            strokeColor(withAlpha(th->lcdDim, 0.4f)); strokeWidth(1.f); stroke();
+            lcdCurve(X, Y, n, shownLocked(tpDIST) || shownLocked(tpSRR) ? th->lock : th->lcdText, 1.8f);
+            std::snprintf(b, sizeof(b), "%d / %d", (int)std::lround(dr * 100.f), (int)std::lround(cr));
+            label(c.x, g.y + g.h - 8, "DRIVE/CRUSH", 9.5f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+            label(c.x + c.w, g.y + g.h - 8, b, 9.5f, th->lcdText, ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
+        }
+        // sends to the master delay and reverb
+        {
+            const R c = cell(3); frame(c, withAlpha(th->lcdDim, 0.35f), 2.f);
+            const float sd = shownValue(tpDEL) / 127.f, sr2 = shownValue(tpREV) / 127.f;
+            const float bw = (c.w - 30) / 2.f;
+            const R b1{c.x + 10, c.y + 8, bw, c.h - 16}, b2{c.x + 20 + bw, c.y + 8, bw, c.h - 16};
+            frame(b1, withAlpha(th->lcdDim, 0.5f), 1.f); frame(b2, withAlpha(th->lcdDim, 0.5f), 1.f);
+            box({b1.x + 2, b1.y + 2 + (b1.h - 4) * (1 - sd), b1.w - 4, (b1.h - 4) * sd}, ink(tpDEL), 1.f);
+            box({b2.x + 2, b2.y + 2 + (b2.h - 4) * (1 - sr2), b2.w - 4, (b2.h - 4) * sr2}, ink(tpREV), 1.f);
+            label(b1.cx(), b1.y + 10, "DLY", 9.f, sd > 0.6f ? th->lcdBg : th->lcdDim, ALIGN_CENTER | ALIGN_MIDDLE, fnMono);
+            label(b2.cx(), b2.y + 10, "REV", 9.f, sr2 > 0.6f ? th->lcdBg : th->lcdDim, ALIGN_CENTER | ALIGN_MIDDLE, fnMono);
+            label(c.x, g.y + g.h - 8, "SENDS", 9.5f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+            std::snprintf(b, sizeof(b), "%s / %s", kEchoModelNames[echoModelIndex((int)gp(gECHO_MODEL))], kReverbModelNames[reverbModelIndex((int)gp(gREV_MODEL))]);
+            label(c.x + c.w, g.y + g.h - 8, b, 8.5f, th->lcdDim, ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
+        }
+    }
+
+    // ---- LFO: two cycles of the wave, depth, phase, where it goes
+    static float lfoWave(int shape, float ph, float rnd0, float rnd1)
+    {
+        switch (shape) {
+        case 0: return 1.f - 4.f * std::fabs(ph - 0.5f);
+        case 1: return std::sin(kTwoPi * ph);
+        case 2: return ph < 0.5f ? 1.f : -1.f;
+        case 3: return 2.f * ph - 1.f;
+        case 4: return 1.f - 2.f * ph;
+        default: return ph < 0.5f ? rnd0 : rnd1;
+        }
+    }
+    R lfoDestBox() const { return {448.f, 228.f, 236.f, 42.f}; }
+    void drawLfoGraphic(const R& g, int l)
+    {
+        const R w{g.x, g.y + 4, 400, g.h - 10};
+        lcdGrid(w, 8, 2);
+        const float dep = shownValue(lfoParam(l, 1)) / 127.f;
+        const int shape = lfoShapeIndex((int)shownValue(lfoParam(l, 2)));
+        const float phase = shownValue(lfoParam(l, 7)) / 128.f;
+        const int n = 200;
+        float X[n], Y[n];
+        static const float rnd[5] = {0.6f, -0.3f, 0.9f, -0.8f, 0.2f};
+        for (int i = 0; i < n; ++i) {
+            const float u = (float)i / (n - 1) * 2.f;      // two cycles
+            float ph = u + phase; const int cyc = (int)ph; ph -= (float)cyc;
+            const int ci = (int)(u + phase);
+            const float v = lfoWave(shape, ph, rnd[ci % 5], rnd[(ci + 2) % 5]);
+            X[i] = w.x + w.w * i / (n - 1);
+            Y[i] = w.cy() - v * (w.h * 0.46f) * std::max(0.08f, dep);
+        }
+        beginPath(); rect(w.x, w.cy(), w.w, 1.f); fillColor(withAlpha(th->lcdDim, 0.5f)); fill();
+        bool lk = false; for (int k = 0; k < 8; ++k) lk = lk || shownLocked(lfoParam(l, k));
+        lcdCurve(X, Y, n, dep < 0.004f ? withAlpha(th->lcdDim, 0.7f) : (lk ? th->lock : th->lcdText), 2.f);
+        const int type = lfoTypeIndex((int)shownValue(lfoParam(l, 3)));
+        if (type == 1) { // RETRIG: the cycle restarts on every note
+            for (int c = 0; c < 2; ++c) { beginPath(); rect(w.x + w.w * c / 2.f, w.y, 1.5f, w.h); fillColor(withAlpha(th->accent, 0.8f)); fill(); }
+        }
+        // right: rate, mode and destination
+        const float rx = g.x + 418;
+        const bool sync = lfoSynced(shownValue(lfoParam(l, 6)));
+        lcdTag(rx, g.y + 10, sync ? "RATE  (TEMPO)" : "RATE", sync ? std::string(kLfoSyncNames[lfoSyncDivIndex((int)shownValue(lfoParam(l, 0)))])
+                                                      : valueText(selTrack, lfoParam(l, 0), shownValue(lfoParam(l, 0))) + " Hz", ink(lfoParam(l, 0)));
+        lcdTag(rx + 150, g.y + 10, "MODE", kLfoTypes[type], ink(lfoParam(l, 3)));
+        const int d = lfoDestIndex((int)shownValue(lfoParam(l, 4)));
+        const int trk = lfoTrackIndex((int)shownValue(lfoParam(l, 5)));
+        char b[64];
+        std::snprintf(b, sizeof(b), "%s %s", trk == 0 ? "THIS TRACK" : (std::string("TRACK ") + std::to_string(trk)).c_str(), "\xE2\x96\xBE");
+        const R db = lfoDestBox();
+        box(db, withAlpha(th->lcdText, 0.10f), 3.f);
+        frame(db, withAlpha(ink(lfoParam(l, 4)), 0.8f), 3.f);
+        label(db.x + 8, db.y + 12, "MODULATES", 9.f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        label(db.x + db.w - 8, db.y + 12, b, 9.f, th->lcdDim, ALIGN_RIGHT | ALIGN_MIDDLE, fnSans);
+        const std::string dn = lfoDestName(selTrack, l, d);
+        number(db.x + 8, db.y + 31, dn.c_str(), 15.f, dep < 0.004f ? th->lcdDim : ink(lfoParam(l, 4)), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        if (dep < 0.004f) label(rx, g.y + g.h - 8, "DEPTH 0: no effect", 9.5f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        else { std::snprintf(b, sizeof(b), "DEPTH %d%%   PHASE %d\xC2\xB0", (int)std::lround(dep * 100.f), (int)std::lround(phase * 360.f));
+               label(rx, g.y + g.h - 8, b, 9.5f, th->lcdText, ALIGN_LEFT | ALIGN_MIDDLE, fnMono); }
+    }
+
+    // ---- TRACK: pitch, scale on a keyboard, output and MIDI
+    void drawTrackGraphic(const R& g)
+    {
+        const int sc = bank->kit[selTrack][kfScale], root = bank->kit[selTrack][kfRoot];
+        const int shift = bank->kit[selTrack][kfTrnsp] - 24;
+        // two octaves from C, scale notes lit, root marked
+        const R kb{g.x, g.y + 6, 420, g.h - 28};
+        const float ww = kb.w / 14.f;
+        static const int whites[7] = {0, 2, 4, 5, 7, 9, 11};
+        static const int blacks[5] = {1, 3, 6, 8, 10};
+        static const float bpos[5] = {1, 2, 4, 5, 6};
+        for (int o = 0; o < 2; ++o)
+            for (int i = 0; i < 7; ++i) {
+                const int n = whites[i];
+                const R k{kb.x + (o * 7 + i) * ww, kb.y, ww - 2, kb.h};
+                const bool in = inScale(n, sc, root);
+                box(k, in ? withAlpha(th->lcdText, sc ? 0.85f : 0.35f) : withAlpha(th->lcdDim, 0.12f), 2.f);
+                if (sc && n == root) { beginPath(); circle(k.cx(), k.y + k.h - 9, 4.f); fillColor(th->lock); fill(); }
+            }
+        for (int o = 0; o < 2; ++o)
+            for (int i = 0; i < 5; ++i) {
+                const int n = blacks[i];
+                const R k{kb.x + (o * 7 + bpos[i]) * ww - ww * 0.32f, kb.y, ww * 0.62f, kb.h * 0.58f};
+                const bool in = inScale(n, sc, root);
+                box(k, th->lcdBg, 2.f);
+                box({k.x + 1, k.y, k.w - 2, k.h - 1}, in ? withAlpha(th->lcdText, sc ? 0.7f : 0.25f) : withAlpha(th->lcdDim, 0.2f), 2.f);
+                if (sc && n == root) { beginPath(); circle(k.cx(), k.y + k.h - 8, 3.5f); fillColor(th->lock); fill(); }
+            }
+        char b[48];
+        if (sc) std::snprintf(b, sizeof(b), "%s %s  -  notes snap to the scale", kNoteNames12[root], kScaleDefs[sc].name);
+        else std::snprintf(b, sizeof(b), "SCALE OFF  -  every note plays as written");
+        label(kb.x, g.y + g.h - 8, b, 9.5f, sc ? th->lcdText : th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        // right: pitch, output, MIDI, legato
+        const float rx = g.x + 450;
+        std::snprintf(b, sizeof(b), shift == 0 ? "0 st" : "%+d st", shift);
+        label(rx, g.y + 12, "PITCH", 9.5f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        number(rx, g.y + 38, b, 24.f, th->lcdText, ALIGN_LEFT | ALIGN_MIDDLE);
+        char kb2[16];
+        lcdTag(rx, g.y + 62, "OUTPUT", kitValueText(kfOut, bank->kit[selTrack][kfOut], kb2, sizeof(kb2)), th->lcdText);
+        lcdTag(rx + 80, g.y + 62, "MIDI", kitValueText(kfMidi, bank->kit[selTrack][kfMidi], kb2, sizeof(kb2)), th->lcdText);
+        lcdTag(rx + 150, g.y + 62, "LEGATO", bank->kit[selTrack][kfLegato] ? "ON" : "OFF", th->lcdText);
+    }
+
+    // ---- ARP: the notes the arpeggiator plays, as a little piano roll
+    void drawArpGraphic(const R& g)
+    {
+        const int mode = bank->kit[selTrack][kfArpMode], octs = bank->kit[selTrack][kfArpOct] + 1;
+        const ChordDef& ch = kChords[bank->kit[selTrack][kfArpChord] % 10];
+        int notes[32]; int nn = 0;
+        for (int o = 0; o < octs; ++o) for (int i = 0; i < ch.n && nn < 32; ++i) notes[nn++] = ch.notes[i] + 12 * o;
+        int seq[16]; const int steps = 16;
+        int idx = 0, dir = 1; uint32_t rs = 12345u;
+        for (int i = 0; i < steps; ++i) {
+            if (mode == 2) seq[i] = notes[nn - 1 - (i % nn)];
+            else if (mode == 3) {
+                seq[i] = notes[idx];
+                if (nn > 1) { if (idx + dir >= nn || idx + dir < 0) dir = -dir; idx += dir; }
+            } else if (mode == 4) { rs = rs * 1664525u + 1013904223u; seq[i] = notes[(rs >> 16) % nn]; }
+            else seq[i] = notes[i % nn];
+        }
+        const R pr{g.x, g.y + 4, 470, g.h - 24};
+        lcdGrid(pr, 16, 1);
+        int lo = 0, hi = notes[nn - 1]; if (hi - lo < 12) hi = lo + 12;
+        const float speed = kArpSpeeds[bank->kit[selTrack][kfArpSpd] % 6];   // steps per note
+        const float cw = pr.w / steps;
+        for (int i = 0; i < steps; ++i) {
+            const float y = pr.y + pr.h - 6 - (pr.h - 12) * (seq[i] - lo) / (float)(hi - lo);
+            const float wdt = std::max(3.f, cw * std::min(1.f, speed) - 2.f);
+            box({pr.x + i * cw + 1, y - 3, wdt, 6}, mode == 0 ? withAlpha(th->lcdDim, 0.35f) : th->lcdText, 1.5f);
+        }
+        char b[64];
+        std::snprintf(b, sizeof(b), mode == 0 ? "ARP OFF  (chord %s)" : "%s  -  %s chord, %d octave%s", mode == 0 ? ch.name : kArpModes[mode], ch.name, octs, octs > 1 ? "s" : "");
+        if (mode == 0) std::snprintf(b, sizeof(b), "ARP OFF  -  chord %s", ch.name);
+        label(pr.x, g.y + g.h - 8, b, 9.5f, mode ? th->lcdText : th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        const float rx = g.x + 500;
+        lcdTag(rx, g.y + 12, "NOTE LENGTH", std::string(kArpSpeedNames[bank->kit[selTrack][kfArpSpd] % 6]) + " step", th->lcdText);
+        lcdTag(rx, g.y + 52, "SOURCE", "held keys / step", th->lcdDim);
+    }
+
+    // ---- LFO destination menu
+    int destLfo = 0;
+    R destBox() const { return {150.f, 120.f, 880.f, 470.f}; }
+    R destTrackBtn(int i) const { return {176.f + i * 82.f, 172.f, 76.f, 32.f}; }
+    R destItem(int col, int row) const { return {176.f + col * 168.f, 248.f + row * 36.f, 160.f, 32.f}; }
+    void openDestMenu(int l) { destLfo = l; overlay = ovDest; repaint(); }
+    void drawDestMenu()
+    {
+        overlayBox(destBox());
+        const R bx = destBox();
+        const int l = destLfo;
+        char b[64]; std::snprintf(b, sizeof(b), "LFO %d  -  WHAT SHOULD IT MOVE?", l + 1);
+        label(bx.x + 26, bx.y + 22, b, 15.f, th->text, ALIGN_LEFT | ALIGN_MIDDLE);
+        const int trk = lfoTrackIndex((int)std::lround(knobValueOf(lfoParam(l, 5))));
+        const int curD = lfoDestIndex((int)std::lround(knobValueOf(lfoParam(l, 4))));
+        for (int i = 0; i <= kTracks; ++i) {
+            char tb[16]; if (i == 0) std::snprintf(tb, sizeof(tb), "THIS"); else std::snprintf(tb, sizeof(tb), "T%d", i);
+            button(destTrackBtn(i), tb, trk == i, 11.f);
+        }
+        label(bx.x + 26, 160, "TRACK", 10.f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        const int tt = trk == 0 ? selTrack : trk - 1;
+        static const char* cols[5] = {"SYNTH", "AMP", "FILTER", "FX", "OTHER"};
+        for (int c = 0; c < 5; ++c) {
+            label(destItem(c, 0).x, 232, cols[c], 10.f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+            for (int r = 0; r < 8; ++r) {
+                const int d = c < 4 ? c * 8 + r : (r == 0 ? kLfoDests : -1);
+                if (d < 0) continue;
+                const char* nm = d >= kLfoDests ? "PITCH" : trackParamName(machineOf(tt), d);
+                if (!std::strcmp(nm, "-")) continue;
+                button(destItem(c, r), nm, d == curD, 10.5f);
+            }
+        }
+    }
+    float knobValueOf(int pi)
+    {
+        if (lockStep >= 0) { const uint8_t lv = pat().locks[selTrack][lockStep][pi]; if (lv != kNoLock) return lv; }
+        return tp(selTrack, pi);
+    }
+    void setTrackParamOrLock(int pi, float v)
+    {
+        if (lockStep >= 0) writeLock(pi, (int)std::lround(v));
+        else setParamGesture(selTrack * kTrackParams + pi, v);
+    }
+    bool destClick(float x, float y)
+    {
+        const int l = destLfo;
+        for (int i = 0; i <= kTracks; ++i)
+            if (destTrackBtn(i).in(x, y)) { setTrackParamOrLock(lfoParam(l, 5), (float)lfoTrackValue(i)); repaint(); return true; }
+        for (int c = 0; c < 5; ++c)
+            for (int r = 0; r < 8; ++r) {
+                const int d = c < 4 ? c * 8 + r : (r == 0 ? kLfoDests : -1);
+                if (d < 0 || !destItem(c, r).in(x, y)) continue;
+                setTrackParamOrLock(lfoParam(l, 4), (float)lfoDestValue(d));
+                if (knobValueOf(lfoParam(l, 1)) < 0.5f) setTrackParamOrLock(lfoParam(l, 1), 40.f);   // make it audible
+                overlay = ovNone; repaint(); return true;
+            }
+        if (!destBox().in(x, y)) { overlay = ovNone; repaint(); }
+        return true;
+    }
+
     void drawLcdSection()
     {
         panelBox({14, 140, 690, 344});
@@ -725,38 +1298,7 @@ protected:
         }
 
         const Pattern& p = pat();
-        auto bar = [&](float x, float y, float v01, const Color& c) {
-            const R full{x + 4, y + 66, 66, 8};
-            frame(full, Color(th->lcdDim, th->lcdBg, 0.4f), 1.f);
-            if (th->dottedLeds) {
-                dotted({full.x + 1, full.y + 1, (full.w - 2) * v01, full.h - 2}, Color(c, th->lcdBg, 0.25f));
-                beginPath(); rect(full.x + 1 + (full.w - 3) * v01, full.y - 1, 2, full.h + 2); fillColor(c); fill();
-            } else {
-                box({full.x + 1, full.y + 2, std::max(1.f, (full.w - 2) * v01), full.h - 4}, c, 1.f);
-            }
-        };
-        for (int k = 0; k < 8; ++k) {
-            const int pi = pageParam(page, k);
-            const float x = 32 + k * 83.f, y = 196;
-            if (kitField(k) >= 0) {
-                const int f = kitField(k), kv = bank->kit[selTrack][f];
-                char kb[16];
-                label(x, y + 10, kKitNames[f], 11.f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE);
-                number(x, y + 40, kitValueText(f, kv, kb, sizeof(kb)), 19.f, th->lcdText, ALIGN_LEFT | ALIGN_MIDDLE);
-                bar(x - 4, y, (float)kv / kKitMax[f], th->lcdText);
-                continue;
-            }
-            if (pi < 0) { label(x, y + 30, "--", 12.f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE); continue; }
-            const bool locked = lockStep >= 0 && p.locks[selTrack][lockStep][pi] != kNoLock;
-            float v = locked ? p.locks[selTrack][lockStep][pi] : tp(selTrack, pi);
-            const bool recNow = recording() && drag == dkTrackKnob && dragIndex == k && recDirty;
-            if (recNow) v = recVal;
-            const Color c = (locked || recNow) ? th->lock : th->lcdText;
-            label(x, y + 10, trackParamName(m, pi), 11.f, (locked || recNow) ? th->lock : th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE);
-            const std::string vt = valueText(selTrack, pi, v);
-            number(x, y + 40, vt.c_str(), vt.size() > 4 ? 17.f : 24.f, c, ALIGN_LEFT | ALIGN_MIDDLE);
-            bar(x - 4, y, v / 127.f, c);
-        }
+        drawPageGraphic({30.f, 190.f, 660.f, 100.f});
 
         for (int i = 0; i < kPages; ++i) button(pageTab(i), kPageNames[i], page == i, 11.f);
 
@@ -906,6 +1448,9 @@ protected:
             if (n == keyNote || pcIsHeld(n)) return th->accent;
             if (n == playing) return Color(th->accent, black ? blackKey : whiteKey, 0.35f);
             if (n == stepNote) return th->lock;
+            // scale lock: keys that are not in the track's scale are dimmed (they snap to a neighbour)
+            if (!inScale(n + bank->kit[selTrack][kfTrnsp] - 24, bank->kit[selTrack][kfScale], bank->kit[selTrack][kfRoot]))
+                return Color(black ? blackKey : whiteKey, th->panel, 0.6f);
             return black ? blackKey : whiteKey;
         };
         for (int n = lo; n <= hi; ++n) {
@@ -1146,7 +1691,7 @@ protected:
         const std::string path = userPresetPath(name);
         FILE* fp = std::fopen(path.c_str(), "wb");
         if (!fp) return false;
-        std::fprintf(fp, "KMSP6-PRESET 1\nNAME %s\nPATTERN %d\n", name.c_str(), editPattern());
+        std::fprintf(fp, "KMSP6-PRESET 2\nNAME %s\nPATTERN %d\n", name.c_str(), editPattern());
         for (int i = 0; i < kGlobalBase + gOUT_STEP; ++i) {
             if (i == kGlobalBase + gPLAY || i == kGlobalBase + gPATTERN) continue;
             std::fprintf(fp, "V %d %.4f\n", i, values[i]);
@@ -1168,6 +1713,7 @@ protected:
         std::vector<float> nv(values, values + kTotalParams);
         std::unique_ptr<Bank> nb(new Bank(*bank));
         int patIdx = 0;
+        const bool v1 = all.rfind("KMSP6-PRESET 1", 0) == 0;   // 0.1 layout: 50 params per track, old filter
         const size_t bankPos = all.find("\nBANK\n");
         const std::string head = all.substr(0, bankPos == std::string::npos ? all.size() : bankPos);
         size_t st = 0;
@@ -1175,7 +1721,10 @@ protected:
             size_t e = head.find('\n', st); if (e == std::string::npos) e = head.size();
             const std::string line = head.substr(st, e - st);
             int idx; float v;
-            if (std::sscanf(line.c_str(), "V %d %f", &idx, &v) == 2 && idx >= 0 && idx < kGlobalBase + gOUT_STEP) nv[idx] = v;
+            if (std::sscanf(line.c_str(), "V %d %f", &idx, &v) == 2 && idx >= 0) {
+                if (v1) idx = presetIndexV1(idx);
+                if (idx < kGlobalBase + gOUT_STEP) nv[idx] = v;
+            }
             std::sscanf(line.c_str(), "PATTERN %d", &patIdx);
             st = e + 1;
         }
@@ -1185,6 +1734,7 @@ protected:
                 std::memcpy(nb->machine, fileBank->machine, sizeof(nb->machine));
                 std::memcpy(nb->mute, fileBank->mute, sizeof(nb->mute));
                 std::memcpy(nb->kit, fileBank->kit, sizeof(nb->kit));
+                if (v1) for (int t = 0; t < kTracks; ++t) migrateFilterV1(&nv[t * kTrackParams], fileBank->kit[t][kfKeyTrk]);
                 if (withPatterns) for (int p = 0; p < kPatterns; ++p) nb->patterns[p] = fileBank->patterns[p];
             }
         }
@@ -1546,9 +2096,9 @@ protected:
         const char* intro = page == pgSynth ? kMachineHelp[m].summary
                           : page == pgTrack ? "Track settings, saved with the kit (not automatable, not lockable)."
                           : page == pgArp ? "Arpeggiator. With the sequencer it plays the CHORD on each note; with MIDI or the keys it plays the notes you hold."
-                          : page >= pgLfo1 ? "Each track has three LFOs. They can move any parameter of this track or of another track (TRK), or the pitch."
+                          : page >= pgLfo1 ? "Each track has three LFOs. Click DEST to choose what it moves (any parameter of this track or another one, or the pitch). SYNC = TEMPO locks its rate to the song."
                           : page == pgAmp ? "Amplitude envelope (attack, hold, decay, sustain, release) and output. The gate length of each step (LEN mode) decides when the release starts."
-                          : page == pgFilter ? "A high-pass and a low-pass filter in series with their own envelope. All of these can be locked per step."
+                          : page == pgFilter ? "A multimode filter (low-pass, band, high-pass, notch) with its own envelope, plus a low cut. The display shows the curve. All of these can be locked per step."
                           : "Per-track effects, plus the sends to the master echo and reverb.";
         fontFace(NANOVG_DEJAVU_SANS_TTF); fontSize(14.f); fillColor(th->lock); textAlign(ALIGN_LEFT | ALIGN_TOP);
         textBox(104, 130, 970, intro, nullptr);
@@ -1558,8 +2108,8 @@ protected:
             if (pi < 0 && kitField(k) < 0) continue;
             const char* nm = kitField(k) >= 0 ? kKitNames[kitField(k)] : trackParamName(m, pi);
             const char* tx = kitField(k) >= 0 ? kKitHelp[kitField(k)] : (pi < 8 ? kMachineHelp[m].p[pi] : kFxHelp[pi - 8]);
-            box({104, y, 74, 42}, th->lcdBg);
-            label(141, y + 22, nm, 11.5f, th->lcdText);
+            box({104, y, 84, 42}, th->lcdBg);
+            label(146, y + 22, nm, 10.5f, th->lcdText);
             fontFace(NANOVG_DEJAVU_SANS_TTF); fontSize(14.f); fillColor(th->text); textAlign(ALIGN_LEFT | ALIGN_MIDDLE);
             textBox(194, y + 12, 870, tx, nullptr);
             std::snprintf(b, sizeof(b), "KNOB %c", 'A' + k);
@@ -1690,6 +2240,11 @@ protected:
         const float x = ev.pos.getX() / sx, y = ev.pos.getY() / sx;
         if (!ev.press) {
             if (keyNote >= 0) { playNote(keyTrack, keyNote, 0, false); keyNote = -1; }
+            if (drag == dkTrackKnob && std::fabs(y - dragY) < 3.f && page >= pgLfo1 && page <= pgLfo3 && (dragIndex == 4 || dragIndex == 5)) {
+                editParameter(selTrack * kTrackParams + pageParam(page, dragIndex), false);
+                drag = dkNone; openDestMenu(page - pgLfo1);    // a click (no drag) on DEST / TARGET opens the list
+                return true;
+            }
             if (drag == dkTrackKnob && lockStep < 0 && !recording()) editParameter(selTrack * kTrackParams + pageParam(page, dragIndex), false);
             recDirty = false;
             if (drag == dkMasterKnob) editParameter(kGlobalBase + masterParam(mpage, dragIndex), false);
@@ -1715,6 +2270,8 @@ protected:
             repaint(); return true;
         }
         if (overlay == ovPresets) { presetClick(x, y, dbl); return true; }
+        if (overlay == ovDest) return destClick(x, y);
+        if (overlay == ovNone && page >= pgLfo1 && page <= pgLfo3 && lfoDestBox().in(x, y)) { openDestMenu(page - pgLfo1); return true; }
         if (overlay == ovHelp) { overlay = ovNone; repaint(); return true; }
         if (overlay == ovLicense) return licenseClick(x, y);
         if (overlay == ovNone && logoArea().in(x, y)) { overlay = ovLicense; licMsg.clear(); repaint(); return true; }

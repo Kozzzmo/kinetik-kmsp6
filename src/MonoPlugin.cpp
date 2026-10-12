@@ -13,12 +13,13 @@ using namespace kn;
 
 static String paramSymbol(int track, int p)
 {
-    static const char* fx[42] = {"atk", "hold", "dec", "sus", "rel", "vol", "pan", "port",
-                                 "fbase", "fwdth", "hpq", "lpq", "fatk", "fdec", "bof", "wof",
+    static const char* fx[48] = {"atk", "hold", "dec", "sus", "rel", "vol", "pan", "port",
+                                 "cutoff", "reso", "ftype", "lowcut", "fatk", "fdec", "fenv", "keytrk",
                                  "amd", "amf", "eqf", "eqg", "srr", "dist", "del", "rev",
                                  "l1spd", "l1dep", "l1shp", "l1typ", "l1dst", "l1trk",
                                  "l2spd", "l2dep", "l2shp", "l2typ", "l2dst", "l2trk",
-                                 "l3spd", "l3dep", "l3shp", "l3typ", "l3dst", "l3trk"};
+                                 "l3spd", "l3dep", "l3shp", "l3typ", "l3dst", "l3trk",
+                                 "l1sync", "l1phase", "l2sync", "l2phase", "l3sync", "l3phase"};
     static_assert(sizeof(fx) / sizeof(fx[0]) == kTrackParams - 8, "symbol table must cover every track parameter");
     char buf[32];
     if (p < 8) std::snprintf(buf, sizeof(buf), "t%d_syn%d", track + 1, p + 1);
@@ -69,7 +70,7 @@ protected:
     const char* getDescription() const override { return "6-track monophonic synthesizer with note sequencer, arpeggiator and parameter locks"; }
     const char* getMaker() const override { return "Kinetik"; }
     const char* getLicense() const override { return "Proprietary"; }
-    uint32_t getVersion() const override { return d_version(0, 1, 0); }
+    uint32_t getVersion() const override { return d_version(0, 2, 0); }
 
     void initParameter(uint32_t index, Parameter& p) override
     {
@@ -81,6 +82,7 @@ protected:
             p.ranges.min = 0; p.ranges.max = 127; p.ranges.def = trackParamDefault(t, k);
             static const char* sec[5] = {"Amp", "Filter", "FX", "", ""};
             if (k < 8) std::snprintf(name, sizeof(name), "T%d Synth %d", t + 1, k + 1);
+            else if (k >= tpLFOX) std::snprintf(name, sizeof(name), "T%d LFO%d %s", t + 1, (k - tpLFOX) / 2 + 1, kFxNames[k - 8]);
             else if (k >= tpLFO1) std::snprintf(name, sizeof(name), "T%d LFO%d %s", t + 1, (k - tpLFO1) / 6 + 1, kFxNames[k - 8]);
             else std::snprintf(name, sizeof(name), "T%d %s %s", t + 1, sec[(k - 8) / 8], kFxNames[k - 8]);
             p.name = name;
@@ -109,13 +111,15 @@ protected:
             p.ranges.min = 0; p.ranges.max = kPatterns - 1; p.ranges.def = 0; return;
         default: break;
         }
-        static const char* section[20] = {"Echo","Echo","Echo","Echo","Echo","Echo","Reverb","Reverb","Reverb","Reverb",
-                                          "Reverb","Reverb","Master","Master","Comp","Comp","Comp","Comp","Master","Master"};
-        static const char* syms[20] = {"echo_time","echo_fb","echo_lpf","echo_hpf","echo_width","echo_lev",
+        static const char* section[kMasterCount] = {"Echo","Echo","Echo","Echo","Echo","Echo","Reverb","Reverb","Reverb","Reverb",
+                                          "Reverb","Reverb","Master","Master","Comp","Comp","Comp","Comp","Master","Master",
+                                          "Echo","Echo","Reverb","Reverb"};
+        static const char* syms[kMasterCount] = {"echo_time","echo_fb","echo_lpf","echo_hpf","echo_width","echo_lev",
                                        "rev_decay","rev_damp","rev_gate","rev_hpf","rev_pre","rev_lev",
-                                       "eq_low","eq_high","cmp_thr","cmp_ratio","cmp_atk","cmp_rel","drive","volume"};
+                                       "eq_low","eq_high","cmp_thr","cmp_ratio","cmp_atk","cmp_rel","drive","volume",
+                                       "echo_model","echo_mod","rev_model","rev_mod"};
         const int i = g - gECHO_TIME;
-        if (i >= 0 && i < 20) {
+        if (i >= 0 && i < kMasterCount) {
             char name[48];
             std::snprintf(name, sizeof(name), "%s %s", section[i], kMasterNames[i]);
             p.name = name; p.symbol = syms[i];

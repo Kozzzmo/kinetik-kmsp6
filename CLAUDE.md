@@ -8,18 +8,19 @@ synthesis is original code. Sister product: **Kinetik KDSP-16** (drums), reposit
 
 | File | Role |
 |---|---|
-| `Params.hpp` | 6 tracks, 64 steps, 16 patterns; 50 lockable params per track: 0–7 machine, AMP 8–15, FILTER 16–23, EFX 24–31, LFO1/2/3 at 32/38/44 (SPD DEP SHP TYP DEST TRK; DEST index 32 = PITCH); machines SAW PULSE SUPER FM WAVE VOX PLUCK NOISE; kit fields OUT MIDI TRNSP LEGATO KEYTRK + ARP mode/oct/speed/chord; gate lengths `kGateSteps` |
-| `Bank.hpp` | like KDSP-16 plus per-step `note` (60 = C3, Ableton naming) and `gate` (index into `kGateSteps`); header `KMSP1`; extra commands `n` (note) and `g` (gate) |
+| `Params.hpp` | 6 tracks, 64 steps, 16 patterns; 56 lockable params per track: 0–7 machine, AMP 8–15, FILTER 16–23 (CUTOFF RESO TYPE LOW CUT ENV ATK ENV DEC ENV AMT KEY TRK), FX 24–31, LFO1/2/3 at 32/38/44 (RATE DEPTH WAVE MODE DEST TARGET; DEST index 32 = PITCH) + SYNC/PHASE at 50+2l (`lfoParam(l,k)`); machines SAW PULSE SUPER FM WAVE VOX PLUCK NOISE; kit fields OUT MIDI TRNSP(=PITCH) LEGATO KEYTRK(unused, old banks) ARP mode/oct/speed/chord SCALE ROOT; scales `kScaleDefs`; master params incl. ECHO/REVERB MODEL + MOD |
+| `MasterFx.hpp` | master echo (5 models) / reverb (5 models) / EQ / compressor / limiter — **identical in kinetik-kdsp16** |
+| `Bank.hpp` | like KDSP-16 plus per-step `note` (60 = C3, Ableton naming) and `gate` (index into `kGateSteps`); header `KMSP2`; extra commands `n` (note) and `g` (gate) |
 | `Wavetable.hpp` | 32 band-limited wave frames × 11 mip levels, generated at start-up by FFT |
 | `Voice.hpp` | `MonoVoice`: the 8 machines (VOX and NOISE have a slow AGC so resonance does not change loudness) |
 | `Engine.hpp` | sequencer with notes, slide (glide without retrigger), legato, AHDSR, HP+LP filter with AD envelope, 3 LFOs, arpeggiator (sequencer chord or held notes), live note recording queue, master FX, 4 output buses |
 | `MonoShared.hpp` | `MonoDirect` interface: the UI talks to the DSP directly (DISTRHO_PLUGIN_WANT_DIRECT_ACCESS) for live notes, recording queue, held-note display |
 | `MonoPlugin.cpp` | DPF glue; MIDI routing: a track whose MIDI channel matches gets the notes, otherwise the selected track (AUTO) |
-| `MonoUI.cpp` | the UI (1180×800 canvas): 9 pages (SYNTH AMP FILTER EFX LFO1-3 TRACK ARP), 8 step modes (TRIG ACCENT SLIDE NOTE LEN RATCH COND TIME), on-screen 3-octave keyboard, PC keys, step entry |
+| `MonoUI.cpp` | the UI (1180×800 canvas): 9 pages (SYNTH AMP FILTER FX LFO1-3 TRACK ARP); the upper LCD draws a graphic per page (`drawPageGraphic`: scope rendered by a private `MonoVoice`, envelope, filter curve, FX, LFO, scale keyboard, arp roll); LFO destination menu (`ovDest`), 8 step modes (TRIG ACCENT SLIDE NOTE LEN RATCH COND TIME), on-screen 3-octave keyboard, PC keys, step entry |
 | `Presets.hpp` | 18 factory presets; `PB::seq()` takes note strings ("C2 . ~D#2 - !G1", x/X = hit on C5) |
 
 `MonoUI.cpp` is the edited file (it was first assembled from parts; edit it directly now).
-User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 1`).
+User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
 
 ## Working with the owner (read first)
 
@@ -74,7 +75,10 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 1`).
 - Engine: per-block event list (sorted by frame then kind), swing, micro-timing, ratchets, conditions
   (probability, FILL, PRE, 1ST, A:B), pattern change at the master length, 4 stereo buses (Main + Out 2–4),
   master echo / FDN reverb / EQ / compressor / drive / safety limiter, denormals flushed (SSE and ARM64).
-- `Skins.hpp`, `Fonts.hpp` (embedded OFL fonts) and `Dsp.hpp` are shared with the sister plugin
+- Parameter names must stay readable and must not copy any hardware maker's abbreviations.
+- Bank text header `KMSP2` (`KMSP1` = 0.1 filter layout, locks converted on load); user preset header `KMSP6-PRESET 2` (v1 converted by `presetIndexV1` + `migrateFilterV1`).
+- Screenshots: `jackd -d dummy &`, `Xvfb :77 &`, run `bin/KinetikKMSP6` with DISPLAY=:77, `xdotool` to click, `import` to grab.
+- `Skins.hpp`, `Fonts.hpp` (embedded OFL fonts), `MasterFx.hpp` and `Dsp.hpp` are shared with the sister plugin
   (kinetik-kdsp16 ⇄ kinetik-kmsp6): keep them identical in both repositories.
 
 ## Licences and demo mode

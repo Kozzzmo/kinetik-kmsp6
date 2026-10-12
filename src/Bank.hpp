@@ -157,7 +157,7 @@ inline bool trackFromHex(Pattern& p, int t, const char* h)
 // Bank serialization (compact, sparse text)
 inline std::string serializeBank(const Bank& b)
 {
-    std::string s = "KMSP1\n";
+    std::string s = "KMSP2\n";
     char buf[96];
     for (int t = 0; t < kTracks; ++t) {
         std::snprintf(buf, sizeof(buf), "M %d %d\nU %d %d\n", t, b.machine[t], t, b.mute[t]);
@@ -289,7 +289,8 @@ inline int applyCommand(Bank& b, const char* line)
 // Parse a full bank. Returns false if the text isn't a bank.
 inline bool deserializeBank(Bank& b, const char* text)
 {
-    if (!text || std::strncmp(text, "KMSP1", 5) != 0) return false;
+    if (!text || (std::strncmp(text, "KMSP1", 5) != 0 && std::strncmp(text, "KMSP2", 5) != 0)) return false;
+    const bool v1 = text[4] == '1';   // first filter layout: convert its locks
     for (auto& p : b.patterns) p.clear();
     b.resetKit();
     const char* s = text;
@@ -298,7 +299,14 @@ inline bool deserializeBank(Bank& b, const char* text)
         const char* e = std::strchr(s, '\n');
         const size_t len = e ? (size_t)(e - s) : std::strlen(s);
         line.assign(s, len);
-        if (!line.empty() && line.rfind("KMSP", 0) != 0) applyCommand(b, line.c_str());
+        if (v1 && line.size() > 2 && line[0] == 'l' && line[1] == ' ') {
+            // l pat track step param value: old filter params 16..23 = BASE WDTH HPQ LPQ FATK FDEC BOF WOF
+            int a = 0, c = 0, d = 0, e2 = 0, f = 0;
+            if (std::sscanf(line.c_str() + 2, "%d %d %d %d %d", &a, &c, &d, &e2, &f) == 5 && e2 >= 16 && e2 <= 23) {
+                static const int to[8] = {-1, tpCUTOFF, -1, tpRESO, tpFATK, tpFDEC, tpFENV, tpFENV};
+                if (to[e2 - 16] >= 0) { char nl[64]; std::snprintf(nl, sizeof(nl), "l %d %d %d %d %d", a, c, d, to[e2 - 16], f); applyCommand(b, nl); }
+            } else applyCommand(b, line.c_str());
+        } else if (!line.empty() && line.rfind("KMSP", 0) != 0) applyCommand(b, line.c_str());
         s += len;
         if (*s == '\n') ++s;
     }

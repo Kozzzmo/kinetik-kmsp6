@@ -2,6 +2,7 @@
 #pragma once
 #include "Random.hpp"
 #include <cstring>
+#include <algorithm>
 #include <cctype>
 #include <initializer_list>
 
@@ -11,6 +12,28 @@ inline int shapeVal(int i) { return (i * 128 + 5) / 6; }      // LFO shape index
 inline int typeVal(int i) { return (i * 128 + 2) / 3; }       // LFO type index -> value
 static constexpr int PITCH = kLfoDests;                       // LFO destination: pitch
 
+// Convert the parameters of one track saved with the first filter layout (KMSP-6 0.1):
+// old 16..23 = BASE WDTH HPQ LPQ FATK FDEC BOF WOF, key tracking was the kit field KEYTRK (0..4).
+inline void migrateFilterV1(float* trackParams, int oldKeyTrk)
+{
+    float* f = trackParams + 16;
+    const float base = f[0], width = f[1], lpq = f[3], fatk = f[4], fdec = f[5], bof = f[6], wof = f[7];
+    f[tpCUTOFF - 16] = std::min(127.f, base + width);
+    f[tpRESO - 16] = lpq;
+    f[tpFTYPE - 16] = 0.f;
+    f[tpLOWCUT - 16] = base;
+    f[tpFATK - 16] = fatk; f[tpFDEC - 16] = fdec;
+    f[tpFENV - 16] = std::max(0.f, std::min(127.f, 64.f + (bof - 64.f) + (wof - 64.f)));
+    f[tpKEYTRK - 16] = (float)std::min(127, oldKeyTrk * 32);
+}
+// parameter index of a "V <index> <value>" line written by a KMSP-6 0.1 preset (50 params per track)
+inline int presetIndexV1(int idx)
+{
+    constexpr int oldTP = 50, oldGB = kTracks * oldTP;
+    if (idx < oldGB) return (idx / oldTP) * kTrackParams + idx % oldTP;
+    return kGlobalBase + (idx - oldGB);
+}
+
 struct PB { // preset builder
     float* v; Bank& b;
     PB(float* values, Bank& bank) : v(values), b(bank)
@@ -18,7 +41,7 @@ struct PB { // preset builder
         b.initDefault();
         for (int t = 0; t < kTracks; ++t)
             for (int p = 0; p < kTrackParams; ++p) tparam(v, t, p) = trackParamDefault(t, p);
-        for (int i = 0; i < 20; ++i) v[kGlobalBase + gECHO_TIME + i] = kMasterDefaults[i];
+        for (int i = 0; i < kMasterCount; ++i) v[kGlobalBase + gECHO_TIME + i] = kMasterDefaults[i];
         v[kGlobalBase + gTEMPO] = 120;
     }
     // machine + synth params (-1 keeps the machine default)
@@ -34,11 +57,17 @@ struct PB { // preset builder
         tparam(v, t, tpATK) = (float)atk; tparam(v, t, tpHOLD) = (float)hold; tparam(v, t, tpDEC) = (float)dec;
         tparam(v, t, tpSUS) = (float)sus; tparam(v, t, tpREL) = (float)rel;
     }
-    // base, width, hp reso, lp reso, env attack, env decay, env->base, env->width
-    void flt(int t, int base, int width, int hpq, int lpq, int fatk, int fdec, int bof, int wof)
+    // presets written for the first filter layout (low edge, width, two resonances, env -> edges),
+    // converted to CUTOFF / RESO / TYPE / LOW CUT / ENV ATK / ENV DEC / ENV AMT
+    void flt(int t, int base, int width, int /*hpq*/, int lpq, int fatk, int fdec, int bof, int wof)
     {
-        const int vals[8] = {base, width, hpq, lpq, fatk, fdec, bof, wof};
-        for (int i = 0; i < 8; ++i) tparam(v, t, tpBASE + i) = (float)vals[i];
+        flt2(t, clampi(base + width, 0, 127), lpq, 0, base, fatk, fdec, clampi(64 + (bof - 64) + (wof - 64), 0, 127));
+    }
+    void flt2(int t, int cutoff, int reso, int type, int lowcut, int fatk, int fdec, int envAmt)
+    {
+        tparam(v, t, tpCUTOFF) = (float)cutoff; tparam(v, t, tpRESO) = (float)reso;
+        tparam(v, t, tpFTYPE) = (float)filterTypeValue(type); tparam(v, t, tpLOWCUT) = (float)lowcut;
+        tparam(v, t, tpFATK) = (float)fatk; tparam(v, t, tpFDEC) = (float)fdec; tparam(v, t, tpFENV) = (float)envAmt;
     }
     void fx(int t, int p, int val) { tparam(v, t, p) = (float)val; }
     void lfo(int t, int l, int spd, int dep, int shape, int type, int dest, int trk = 0)
@@ -54,7 +83,7 @@ struct PB { // preset builder
         b.kit[t][kfArpSpd] = (uint8_t)spd; b.kit[t][kfArpChord] = (uint8_t)chord;
     }
     void legato(int t, bool on = true) { b.kit[t][kfLegato] = on ? 1 : 0; }
-    void keytrk(int t, int v4) { b.kit[t][kfKeyTrk] = (uint8_t)v4; }
+    void keytrk(int t, int v4) { tparam(v, t, tpKEYTRK) = (float)clampi(v4 * 32, 0, 127); }
     void g(int gp, int val) { v[kGlobalBase + gp] = (float)val; }
 
     static int parseNote(const char*& c)
@@ -138,7 +167,7 @@ static void presetDemo(PB& b)
     b.kit(1, mPULSE, {40, 40, 30, 0, 0, 0, 0, 0}); b.amp(1, 0, 0, 40, 0, 40); b.flt(1, 10, 80, 0, 40, 0, 45, 64, 90);
     b.fx(1, tpDEL, 50); b.fx(1, tpPAN, 44);
     b.kit(2, mSUPER, {55, 90, 127, 0, 0, 64, 0, 10}); b.amp(2, 60, 0, 80, 100, 80); b.flt(2, 0, 82, 0, 20, 0, 50, 64, 64);
-    b.fx(2, tpREV, 70); b.fx(2, tpVOL, 80); b.lfo(2, 0, 30, 30, 1, 0, tpWDTH);
+    b.fx(2, tpREV, 70); b.fx(2, tpVOL, 80); b.lfo(2, 0, 30, 30, 1, 0, tpCUTOFF);
     b.kit(3, mFM, {32, 60, 96, 30, 0, 0, 60, 10}); b.amp(3, 0, 0, 70, 0, 70); b.flt(3, 0, 127, 0, 0, 0, 50, 64, 64);
     b.fx(3, tpREV, 50); b.fx(3, tpDEL, 40); b.fx(3, tpPAN, 84); b.fx(3, tpVOL, 88);
     b.kit(4, mWAVE, {10, 30, 50, 64, 70, 30, 10, 0}); b.amp(4, 5, 0, 60, 80, 50); b.flt(4, 0, 96, 0, 30, 0, 50, 64, 70);
@@ -161,7 +190,7 @@ static void presetAcid(PB& b)
     b.fx(0, tpDIST, 40); b.fx(0, tpPORT, 22); b.fx(0, tpDEL, 25); b.fx(0, tpVOL, 92);
     b.kit(1, mPULSE, {64, 0, 0, 0, 0, 30, 0, 0}); b.amp(1, 0, 0, 40, 40, 20); b.flt(1, 0, 48, 0, 100, 0, 46, 64, 108);
     b.fx(1, tpDIST, 30); b.fx(1, tpPORT, 22); b.fx(1, tpDEL, 40); b.fx(1, tpPAN, 80);
-    b.lfo(1, 0, 18, 40, 0, 0, tpWDTH);
+    b.lfo(1, 0, 18, 40, 0, 0, tpCUTOFF);
     b.kit(2, mNOISE, {110, 40, 0, 0, 0, 0, 0, 0}); b.amp(2, 0, 0, 25, 0, 20); b.flt(2, 60, 127, 0, 0, 0, 50, 64, 64);
     b.fx(2, tpVOL, 70);
     b.kit(3, mFM, {16, 40, 64, 0, 0, 0, 30, 0}); b.amp(3, 0, 0, 35, 0, 25); b.fx(3, tpREV, 30);
@@ -170,7 +199,7 @@ static void presetAcid(PB& b)
     b.kit(5, mWAVE, {80, 70, 60, 64, 64, 0, 40, 0}); b.amp(5, 0, 0, 50, 0, 40); b.fx(5, tpDEL, 70); b.fx(5, tpPAN, 40);
     b.g(gECHO_TIME, 54); b.g(gECHO_FB, 55); b.g(gREV_SIZE, 50);
     b.seq(0, 0, "!A1 A1 ~A2 A1 | . A1 ~C2 !A1 | G1 . A1 ~E2 | A1 !A2 . ~G2");
-    b.lock(0, 0, 7, tpWOF, 120); b.lock(0, 0, 13, tpWOF, 124);
+    b.lock(0, 0, 7, tpFENV, 120); b.lock(0, 0, 13, tpFENV, 124);
     b.seq(0, 2, ". . X . | . . X . | . . X . | . . X X");
     for (int s = 0; s < 16; ++s) if (b.b.patterns[0].flags[2][s]) b.b.patterns[0].note[2][s] = 84;
     b.settings(0, 16, 56);
@@ -186,7 +215,7 @@ static void presetDetroit(PB& b)
     b.kit(0, mPULSE, {50, 20, 10, 0, 0, 70, 0, 0}); b.amp(0, 0, 0, 50, 40, 25); b.flt(0, 0, 50, 0, 50, 0, 45, 64, 90);
     b.kit(1, mSAW, {0, 0, 76, 64, 64, 64, 0, 0}); b.amp(1, 0, 0, 55, 30, 40); b.flt(1, 10, 70, 0, 40, 0, 50, 64, 96);
     b.arp(1, 1, 0, 0, 5); b.fx(1, tpDEL, 60); b.fx(1, tpREV, 40); b.fx(1, tpPAN, 50);
-    b.lfo(1, 0, 6, 25, 1, 0, tpWDTH);
+    b.lfo(1, 0, 6, 25, 1, 0, tpCUTOFF);
     b.kit(2, mSUPER, {30, 70, 90, 0, 0, 64, 0, 0}); b.amp(2, 70, 0, 80, 100, 90); b.flt(2, 0, 80, 0, 10, 0, 50, 64, 64);
     b.fx(2, tpREV, 80); b.fx(2, tpVOL, 72);
     b.kit(3, mFM, {32, 40, 112, 25, 0, 1, 40, 20}); b.amp(3, 0, 0, 40, 0, 40); b.fx(3, tpDEL, 50); b.fx(3, tpPAN, 84);
@@ -205,9 +234,9 @@ static void presetDetroit(PB& b)
 static void presetBerlin(PB& b)
 {
     b.kit(0, mSAW, {0, 30, 66, 30, 64, 64, 50, 0}); b.amp(0, 0, 0, 50, 40, 40); b.flt(0, 0, 54, 0, 70, 0, 55, 64, 92);
-    b.lfo(0, 0, 4, 30, 0, 0, tpWDTH); b.fx(0, tpDEL, 30); b.fx(0, tpVOL, 88);
+    b.lfo(0, 0, 4, 30, 0, 0, tpCUTOFF); b.fx(0, tpDEL, 30); b.fx(0, tpVOL, 88);
     b.kit(1, mSAW, {0, 64, 70, 50, 96, 64, 0, 0}); b.amp(1, 0, 0, 45, 0, 40); b.flt(1, 0, 70, 0, 60, 0, 40, 64, 90);
-    b.fx(1, tpDEL, 70); b.fx(1, tpPAN, 34); b.lfo(1, 0, 3, 35, 1, 0, tpWDTH);
+    b.fx(1, tpDEL, 70); b.fx(1, tpPAN, 34); b.lfo(1, 0, 3, 35, 1, 0, tpCUTOFF);
     b.kit(2, mSUPER, {40, 80, 127, 64, 0, 64, 0, 0}); b.amp(2, 90, 0, 90, 110, 100); b.flt(2, 0, 76, 0, 20, 0, 50, 64, 64);
     b.fx(2, tpREV, 90); b.fx(2, tpVOL, 70);
     b.kit(3, mWAVE, {60, 10, 100, 64, 64, 0, 0, 0}); b.amp(3, 80, 0, 80, 100, 100); b.fx(3, tpREV, 80); b.fx(3, tpVOL, 70);
@@ -252,7 +281,7 @@ static void presetArpCascade(PB& b)
     b.kit(1, mPLUCK, {70, 100, 40, 30, 0, 30, 40, 0}); b.amp(1, 0, 0, 90, 100, 60); b.arp(1, 1, 2, 0, 4); b.fx(1, tpVOL, 84);
     b.fx(1, tpDEL, 60); b.fx(1, tpPAN, 34); b.fx(1, tpREV, 40);
     b.kit(2, mSAW, {64, 64, 70, 50, 96, 30, 0, 0}); b.amp(2, 0, 0, 35, 0, 30); b.flt(2, 10, 80, 0, 40, 0, 35, 64, 84);
-    b.arp(2, 2, 1, 1, 5); b.fx(2, tpDEL, 60); b.fx(2, tpPAN, 94); b.lfo(2, 0, 2, 40, 0, 0, tpWDTH);
+    b.arp(2, 2, 1, 1, 5); b.fx(2, tpDEL, 60); b.fx(2, tpPAN, 94); b.lfo(2, 0, 2, 40, 0, 0, tpCUTOFF);
     b.kit(3, mFM, {32, 40, 112, 50, 0, 3, 50, 10}); b.amp(3, 0, 0, 60, 0, 60); b.arp(3, 4, 2, 0, 1);
     b.fx(3, tpREV, 70); b.fx(3, tpDEL, 50); b.fx(3, tpVOL, 80);
     b.kit(4, mSUPER, {35, 80, 110, 0, 0, 64, 0, 0}); b.amp(4, 90, 0, 90, 110, 100); b.fx(4, tpREV, 80); b.fx(4, tpVOL, 66);
@@ -272,7 +301,7 @@ static void presetDubStabs(PB& b)
 {
     b.kit(0, mSAW, {127, 127, 64, 0, 64, 64, 90, 0}); b.amp(0, 0, 0, 70, 90, 40); b.fx(0, tpVOL, 80); b.flt(0, 0, 40, 0, 20, 0, 50, 64, 64);
     b.kit(1, mSAW, {0, 0, 78, 64, 64, 64, 0, 0}); b.amp(1, 0, 0, 40, 0, 50); b.flt(1, 10, 66, 0, 60, 0, 40, 64, 92);
-    b.arp(1, 5, 0, 0, 5); b.b.kit[1][kfArpSpd] = 0; b.fx(1, tpDEL, 90); b.fx(1, tpREV, 60); b.lfo(1, 0, 3, 30, 1, 0, tpWDTH);
+    b.arp(1, 5, 0, 0, 5); b.b.kit[1][kfArpSpd] = 0; b.fx(1, tpDEL, 90); b.fx(1, tpREV, 60); b.lfo(1, 0, 3, 30, 1, 0, tpCUTOFF);
     b.kit(2, mPULSE, {60, 20, 20, 0, 0, 0, 0, 0}); b.amp(2, 0, 0, 30, 0, 40); b.flt(2, 30, 70, 0, 40, 0, 40, 64, 80);
     b.fx(2, tpDEL, 90); b.fx(2, tpPAN, 30);
     b.kit(3, mNOISE, {80, 50, 0, 0, 40, 0, 20, 0}); b.amp(3, 80, 0, 90, 90, 100); b.fx(3, tpREV, 100); b.fx(3, tpVOL, 60);
@@ -313,7 +342,7 @@ static void presetAmbient(PB& b)
     b.kit(0, mWAVE, {60, 8, 60, 64, 66, 60, 0, 0}); b.amp(0, 100, 0, 100, 110, 110); b.flt(0, 0, 76, 0, 20, 0, 50, 64, 64);
     b.fx(0, tpREV, 100); b.fx(0, tpVOL, 80); b.lfo(0, 0, 4, 40, 1, 0, 0);
     b.kit(1, mSUPER, {25, 70, 127, 0, 0, 64, 0, 0}); b.amp(1, 110, 0, 110, 110, 115); b.flt(1, 0, 70, 0, 10, 0, 50, 64, 64);
-    b.fx(1, tpREV, 110); b.fx(1, tpVOL, 70); b.lfo(1, 0, 3, 30, 1, 0, tpWDTH);
+    b.fx(1, tpREV, 110); b.fx(1, tpVOL, 70); b.lfo(1, 0, 3, 30, 1, 0, tpCUTOFF);
     b.kit(2, mVOX, {30, 64, 30, 60, 20, 50, 30, 80}); b.amp(2, 100, 0, 100, 110, 110); b.fx(2, tpREV, 110); b.fx(2, tpVOL, 70);
     b.lfo(2, 0, 2, 50, 1, 0, 0);
     b.kit(3, mFM, {32, 30, 112, 40, 0, 3, 90, 0}); b.amp(3, 0, 0, 90, 0, 100); b.fx(3, tpREV, 90); b.fx(3, tpDEL, 70); b.fx(3, tpVOL, 75);
@@ -413,7 +442,7 @@ static void presetTrance(PB& b)
 {
     b.kit(0, mSAW, {0, 0, 64, 0, 64, 64, 80, 0}); b.amp(0, 0, 0, 30, 40, 15); b.fx(0, tpVOL, 92); b.flt(0, 0, 54, 0, 40, 0, 35, 64, 80);
     b.kit(1, mSUPER, {70, 110, 127, 0, 20, 64, 10, 20}); b.amp(1, 0, 0, 40, 30, 50); b.flt(1, 0, 80, 0, 30, 0, 50, 64, 90);
-    b.fx(1, tpDEL, 60); b.fx(1, tpREV, 70); b.fx(1, tpVOL, 82); b.lfo(1, 0, 1, 40, 3, 0, tpWDTH);
+    b.fx(1, tpDEL, 60); b.fx(1, tpREV, 70); b.fx(1, tpVOL, 82); b.lfo(1, 0, 1, 40, 3, 0, tpCUTOFF);
     b.kit(2, mSUPER, {50, 100, 127, 0, 0, 64, 0, 10}); b.amp(2, 80, 0, 90, 110, 100); b.fx(2, tpREV, 100); b.fx(2, tpVOL, 66);
     b.kit(3, mPLUCK, {60, 110, 30, 30, 0, 40, 30, 0}); b.amp(3, 0, 0, 80, 100, 50); b.arp(3, 1, 2, 0, 2);
     b.fx(3, tpDEL, 70); b.fx(3, tpPAN, 30);
