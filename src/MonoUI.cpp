@@ -962,7 +962,8 @@ protected:
         // cutoff marker
         const float cx = clampf(fx(cutHz), pl.x, pl.x + pl.w);
         beginPath(); rect(cx, pl.y, 1.f, pl.h); fillColor(withAlpha(ink(tpCUTOFF), 0.7f)); fill();
-        label(std::min(cx + 4, pl.x + pl.w - 60), pl.y + 9, (hzText(cutHz) + " Hz").c_str(), 10.f, ink(tpCUTOFF), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        if (cx > pl.x + pl.w - 90) label(cx - 4, pl.y + 24, (hzText(cutHz) + " Hz").c_str(), 10.f, ink(tpCUTOFF), ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
+        else label(cx + 4, pl.y + 24, (hzText(cutHz) + " Hz").c_str(), 10.f, ink(tpCUTOFF), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
         label(pl.x + 4, pl.y + 9, kFilterTypeNames[type], 10.f, ink(tpFTYPE), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
 
         // right: the filter envelope (attack / decay) and its amount
@@ -987,7 +988,7 @@ protected:
         std::snprintf(b, sizeof(b), "KEY %d%%", (int)std::lround(shownValue(tpKEYTRK) / 127.f * 100.f));
         label(ev.x + ev.w, g.y + g.h - 14, b, 9.5f, ink(tpKEYTRK), ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
         std::snprintf(b, sizeof(b), "RESO %d", (int)std::lround(shownValue(tpRESO)));
-        label(pl.x + pl.w - 4, pl.y + 9, b, 10.f, ink(tpRESO), ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
+        label(pl.x + 60, pl.y + 9, b, 10.f, ink(tpRESO), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
     }
 
     // ---- FX: tremolo, EQ bell, crush + drive, sends
@@ -1123,7 +1124,7 @@ protected:
         box(db, withAlpha(th->lcdText, 0.10f), 3.f);
         frame(db, withAlpha(ink(lfoParam(l, 4)), 0.8f), 3.f);
         label(db.x + 8, db.y + 12, "MODULATES", 9.f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
-        label(db.x + db.w - 8, db.y + 12, b, 9.f, th->lcdDim, ALIGN_RIGHT | ALIGN_MIDDLE, fnSans);
+        label(db.x + db.w - 8, db.y + 12, b, 9.f, th->lcdDim, ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
         const std::string dn = lfoDestName(selTrack, l, d);
         number(db.x + 8, db.y + 31, dn.c_str(), 15.f, dep < 0.004f ? th->lcdDim : ink(lfoParam(l, 4)), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
         if (dep < 0.004f) label(rx, g.y + g.h - 8, "DEPTH 0: no effect", 9.5f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
