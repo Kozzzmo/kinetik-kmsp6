@@ -962,6 +962,7 @@ protected:
         // cutoff marker
         const float cx = clampf(fx(cutHz), pl.x, pl.x + pl.w);
         beginPath(); rect(cx, pl.y, 1.f, pl.h); fillColor(withAlpha(ink(tpCUTOFF), 0.7f)); fill();
+        box({cx > pl.x + pl.w - 90 ? cx - 62 : cx + 2, pl.y + 17, 60, 14}, withAlpha(th->lcdBg, 0.85f), 2.f);
         if (cx > pl.x + pl.w - 90) label(cx - 4, pl.y + 24, (hzText(cutHz) + " Hz").c_str(), 10.f, ink(tpCUTOFF), ALIGN_RIGHT | ALIGN_MIDDLE, fnMono);
         else label(cx + 4, pl.y + 24, (hzText(cutHz) + " Hz").c_str(), 10.f, ink(tpCUTOFF), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
         label(pl.x + 4, pl.y + 9, kFilterTypeNames[type], 10.f, ink(tpFTYPE), ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
