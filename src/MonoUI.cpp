@@ -401,9 +401,9 @@ protected:
     R scaleGroup() const { return {124.f, 706.f, 222.f, 52.f}; }
     R gScaleBox() const { return {196.f, 712.f, 92.f, 40.f}; }
     R gRootBox() const { return {292.f, 712.f, 48.f, 40.f}; }
-    R rndGroup() const { return {354.f, 706.f, 510.f, 52.f}; }
-    R rndBtn(int i) const { return {448.f + i * 103.f, 712.f, 99.f, 40.f}; }
-    R undoBtn() const { return {870.f, 712.f, 76.f, 40.f}; }
+    R rndGroup() const { return {354.f, 706.f, 556.f, 52.f}; }
+    R rndBtn(int i) const { return {448.f + i * 92.f, 712.f, 88.f, 40.f}; }
+    R undoBtn() const { return {918.f, 712.f, 80.f, 40.f}; }
     R presetBtn() const { return {1010.f, 704.f, 150.f, 34.f}; }
     R saveBtn() const { return {1010.f, 742.f, 150.f, 34.f}; }
     // presets window
@@ -528,6 +528,22 @@ protected:
             fontBlur(0.f);
         }
         fillColor(c); text(x, y, s, nullptr);
+    }
+    // number() that never gets wider than maxW: smaller font first, then the end is cut with ".."
+    void fitNumber(float x, float y, const std::string& s, float size, float maxW, const Color& c, int align, int font)
+    {
+        if (s.empty()) return;
+        const int f = font < 0 ? th->fontNum : font;
+        const float k = f == fnSerif || f == fnSerifItalic ? 1.25f : (f == fnBlack ? 0.95f : 1.f);
+        auto width = [&](const std::string& t, float sz) {
+            useFont(f); fontSize(sz * k);
+            DGL_NAMESPACE::Rectangle<float> b; textBounds(0, 0, t.c_str(), nullptr, b); return b.getWidth();
+        };
+        float sz = size;
+        while (sz > size * 0.7f && width(s, sz) > maxW) sz -= 0.5f;
+        std::string t = s;
+        while (t.size() > 1 && width(t, sz) > maxW) { t.pop_back(); while (!t.empty() && t.back() == ' ') t.pop_back(); if (width(t + "..", sz) <= maxW) { t += ".."; break; } }
+        number(x, y, t.c_str(), sz, c, align, f);
     }
     void dotted(const R& r, const Color& c)
     {
@@ -1627,9 +1643,9 @@ protected:
         box(grp, th->inner);
         label(grp.x + 10, grp.y + 20, "RANDOMIZE", 10.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
         label(grp.x + 10, grp.y + 37, "undo restores", 9.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
-        static const char* rn[4] = {"SOUND", "SEQUENCE", "PATTERN", "EVERYTHING"};
-        static const char* rs[4] = {"this track", "this track", "all tracks", "kit+fx+pattern"};
-        for (int i = 0; i < 4; ++i) {
+        static const char* rn[5] = {"SOUND", "ALL SOUNDS", "SEQUENCE", "PATTERN", "EVERYTHING"};
+        static const char* rs[5] = {"this track", "no steps", "this track", "all tracks", "kit+fx+steps"};
+        for (int i = 0; i < 5; ++i) {
             const R r = rndBtn(i);
             box(r, th->btnFill); frame(r, th->btnEdge);
             label(r.cx(), r.y + 14, rn[i], 10.5f, th->btnText);
@@ -1640,12 +1656,12 @@ protected:
         else { box(u, th->btnFill); frame(u, th->btnEdge); }
         label(u.cx(), u.y + 14, "UNDO", 10.5f, undoValid ? th->lock : th->faint);
         label(u.cx(), u.y + 30, undoValid ? undoWhat : "", 9.f, th->dim);
-        label(996, 718, "PRESET", 9.5f, th->dim, ALIGN_RIGHT | ALIGN_MIDDLE);
-        if (th->fontNum == fnSerif) number(996, 744, presetName.c_str(), 19.f, th->text, ALIGN_RIGHT | ALIGN_MIDDLE, fnSerifItalic);
-        else number(996, 744, presetName.c_str(), 16.f, th->text, ALIGN_RIGHT | ALIGN_MIDDLE);
+        // PRESETS button: caption + the current preset name (fitted inside, never over UNDO)
         const R pb = presetBtn();
         box(pb, th->btnFill); frame(pb, th->btnEdge, -1.f, 1.5f);
-        label(pb.cx() - 8, pb.cy() + 1, "PRESETS", 11.5f, th->btnText);
+        label(pb.x + 10, pb.y + 10, "PRESETS", 8.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        if (th->fontNum == fnSerif) fitNumber(pb.x + 10, pb.y + 23, presetName, 13.f, pb.w - 44, th->text, ALIGN_LEFT | ALIGN_MIDDLE, fnSerifItalic);
+        else fitNumber(pb.x + 10, pb.y + 23, presetName, 12.f, pb.w - 44, th->text, ALIGN_LEFT | ALIGN_MIDDLE, -1);
         beginPath(); moveTo(pb.x + pb.w - 28, pb.cy() - 5); lineTo(pb.x + pb.w - 21, pb.cy() + 1); lineTo(pb.x + pb.w - 28, pb.cy() + 7);
         closePath(); fillColor(th->btnText); fill();
         const R sv = saveBtn();
@@ -2042,11 +2058,15 @@ protected:
     void randomize(int what)
     {
         RandGen r(++rndCounter * 2654435761u ^ lastClickTime);
-        static const char* names[4] = {"sound", "sequence", "pattern", "everything"};
+        static const char* names[5] = {"sound", "sequence", "pattern", "everything", "all sounds"};
         snapshot(names[what]);
         std::vector<float> nv(values, values + kTotalParams);
         if (what == 0) {
             randomizeSound(nv.data(), selTrack, machineOf(selTrack), r);
+            applyState(nv.data(), nullptr);
+        } else if (what == 4) {
+            // every track's sound (machines kept), the sequencer is not touched
+            for (int t = 0; t < kTracks; ++t) randomizeSound(nv.data(), t, machineOf(t), r);
             applyState(nv.data(), nullptr);
         } else if (what == 1) {
             std::unique_ptr<Pattern> tmp(new Pattern(pat()));
@@ -2058,7 +2078,7 @@ protected:
             randomizePattern(nb->patterns[editPattern()], *nb, r);
             applyState(nv.data(), nb.get());
         }
-        if (what >= 2) { clearSel(); noteStep = -1; }
+        if (what == 2 || what == 3) { clearSel(); noteStep = -1; }
         presetName = what == 3 ? "(random)" : presetName;
         repaint();
     }
@@ -2485,7 +2505,7 @@ protected:
             }
         }
         if (recBtn().in(x, y)) { setRec(!rec); repaint(); return true; }
-        for (int i = 0; i < 4; ++i) if (rndBtn(i).in(x, y)) { randomize(i); return true; }
+        for (int i = 0; i < 5; ++i) if (rndBtn(i).in(x, y)) { static const int what[5] = {0, 4, 1, 2, 3}; randomize(what[i]); return true; }
         if (undoBtn().in(x, y)) { undo(); return true; }
         if (presetBtn().in(x, y)) { openPresets(); return true; }
         if (saveBtn().in(x, y)) { openSave(); return true; }

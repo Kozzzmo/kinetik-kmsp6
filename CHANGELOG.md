@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- **RANDOMIZE ALL SOUNDS**: new sounds on every track at once, machines kept, sequencer untouched (UNDO restores)
+- The preset name now sits inside the PRESETS button and shrinks to fit (it overlapped UNDO)
+
 ## 0.4
 
 - **Update check**: the plug-in tells you when a new version is out (at most once a day, nothing is sent). Click the
