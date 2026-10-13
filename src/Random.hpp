@@ -31,7 +31,7 @@ static constexpr int kNumRndScales = (int)(sizeof(kRndScales) / sizeof(kRndScale
 // role of a track: 0 = bass, 1 = lead / arp, 2 = pad / chord
 inline int trackRole(int t, int m)
 {
-    if (m == mVOX || (m == mSUPER && t > 1)) return 2;
+    if (m == mVOX || m == mCHORD || (m == mSUPER && t > 1)) return 2;
     return t == 0 ? 0 : 1;
 }
 
@@ -155,7 +155,7 @@ inline void randomizePattern(Pattern& pat, const Bank& kit, RandGen& r)
 inline void randomizeKit(float* values, Bank& kit, RandGen& r)
 {
     static const int bass[] = {mSAW, mPULSE, mFM, mWAVE, mSAW};
-    static const int any[] = {mSAW, mPULSE, mSUPER, mFM, mWAVE, mVOX, mPLUCK, mNOISE, mPLUCK, mFM, mWAVE};
+    static const int any[] = {mSAW, mPULSE, mSUPER, mFM, mWAVE, mVOX, mPLUCK, mNOISE, mPLUCK, mFM, mWAVE, mCHORD};
     for (int t = 0; t < kTracks; ++t) {
         const int m = t == 0 ? bass[r.range(0, 4)] : any[r.range(0, (int)(sizeof(any) / sizeof(any[0])) - 1)];
         kit.machine[t] = (uint8_t)m;

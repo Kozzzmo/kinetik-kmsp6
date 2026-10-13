@@ -81,7 +81,7 @@ static const uint8_t kMasterDefaults[kMasterCount] = {
 };
 
 // ---- machines ----
-enum MachineId { mOFF, mSAW, mPULSE, mSUPER, mFM, mWAVE, mVOX, mPLUCK, mNOISE, kMachines };
+enum MachineId { mOFF, mSAW, mPULSE, mSUPER, mFM, mWAVE, mVOX, mPLUCK, mNOISE, mCHORD, kMachines };
 
 struct MachineDef {
     const char* name;
@@ -99,6 +99,7 @@ static const MachineDef kMachineDefs[kMachines] = {
     {"VOX",   {"VOWEL", "FORMANT", "BREATH", "RESONANCE", "VIB DEPTH", "VIB RATE", "BRIGHT", "CHORUS"}, {0, 64, 20, 60, 0, 64, 40, 0}},
     {"PLUCK", {"DECAY", "BRIGHT", "PICK POS", "DAMPING", "STIFFNESS", "NOISE", "BODY", "DRIVE"}, {80, 80, 50, 40, 0, 50, 0, 0}},
     {"NOISE", {"COLOR", "RESONANCE", "TRACKING", "CRUSH", "GRAIN", "TONE", "LP MIX", "DRIVE"}, {64, 60, 100, 0, 0, 0, 40, 0}},
+    {"CHORD", {"WAVE", "CHORD", "VOICES", "INVERT", "SPREAD", "DETUNE", "STRUM", "BRIGHT"}, {20, 10, 26, 0, 0, 30, 0, 90}},
 };
 
 static const uint8_t kDefaultKit[kTracks] = {mSAW, mPULSE, mSUPER, mFM, mWAVE, mPLUCK};
@@ -159,6 +160,22 @@ static const ChordDef kChords[10] = {
     {"MAJ7", 4, {0, 4, 7, 11}}, {"MIN7", 4, {0, 3, 7, 10}}, {"DOM7", 4, {0, 4, 7, 10}},
     {"5TH", 2, {0, 7}}, {"OCTV", 2, {0, 12}}, {"DIM", 3, {0, 3, 6}},
 };
+// ---- CHORD machine: chord shapes (semitones above the root; voices beyond the shape repeat it an octave up)
+static constexpr int kChordShapes = 16;
+struct ChordShape { const char* name; int n; int notes[5]; };
+static const ChordShape kChordShapeDefs[kChordShapes] = {
+    {"MAJ", 3, {0, 4, 7}},       {"MIN", 3, {0, 3, 7}},        {"SUS2", 3, {0, 2, 7}},       {"SUS4", 3, {0, 5, 7}},
+    {"MAJ7", 4, {0, 4, 7, 11}},  {"MIN7", 4, {0, 3, 7, 10}},   {"DOM7", 4, {0, 4, 7, 10}},   {"MIN7b5", 4, {0, 3, 6, 10}},
+    {"6TH", 4, {0, 4, 7, 9}},    {"MIN6", 4, {0, 3, 7, 9}},    {"ADD9", 4, {0, 4, 7, 14}},   {"MAJ9", 5, {0, 4, 7, 11, 14}},
+    {"MIN9", 5, {0, 3, 7, 10, 14}}, {"DIM", 3, {0, 3, 6}},     {"AUG", 3, {0, 4, 8}},        {"QUARTAL", 4, {0, 5, 10, 15}},
+};
+inline int chordShapeIndex(int v) { const int i = v * kChordShapes / 128; return i < 0 ? 0 : (i >= kChordShapes ? kChordShapes - 1 : i); }
+inline int chordVoices(int v) { return 3 + (v * 6) / 128; }   // 3..8
+
+// ---- LINK: tracks grouped as the voices of one polyphonic instrument
+enum LinkMode { lmPoly, lmCycle, lmUnison, lmRandom, kLinkModes };
+static const char* const kLinkModeNames[kLinkModes] = {"POLY", "CYCLE", "UNISON", "RANDOM"};
+
 inline const char* kitValueText(int field, int v, char* buf, int n)
 {
     static const char* out[4] = {"MAIN", "OUT 2", "OUT 3", "OUT 4"};

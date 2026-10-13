@@ -25,6 +25,7 @@ struct Pattern {
     uint8_t ratch[kTracks][kSteps];  // number of hits in the step (0/1 = single)
     uint8_t note[kTracks][kSteps];   // MIDI note of the trig (60 = C3)
     uint8_t gate[kTracks][kSteps];   // index into kGateSteps
+    uint8_t chord[kTracks][kSteps];  // index into kChords (0 = single note): played by LINK groups
 
     Pattern() { clear(); }
     void clear()
@@ -35,6 +36,7 @@ struct Pattern {
         std::memset(locks, kNoLock, sizeof(locks));
         std::memset(cond, 0, sizeof(cond)); std::memset(micro, 0, sizeof(micro)); std::memset(ratch, 0, sizeof(ratch));
         std::memset(note, 60, sizeof(note)); std::memset(gate, kDefaultGate, sizeof(gate));
+        std::memset(chord, 0, sizeof(chord));
     }
     void clearTrack(int t)
     {
@@ -42,12 +44,13 @@ struct Pattern {
         std::memset(locks[t], kNoLock, sizeof(locks[t]));
         std::memset(cond[t], 0, kSteps); std::memset(micro[t], 0, kSteps); std::memset(ratch[t], 0, kSteps);
         std::memset(note[t], 60, kSteps); std::memset(gate[t], kDefaultGate, kSteps);
+        std::memset(chord[t], 0, kSteps);
     }
     void copyStep(int t, int dst, int src)
     {
         flags[t][dst] = flags[t][src]; cond[t][dst] = cond[t][src];
         micro[t][dst] = micro[t][src]; ratch[t][dst] = ratch[t][src];
-        note[t][dst] = note[t][src]; gate[t][dst] = gate[t][src];
+        note[t][dst] = note[t][src]; gate[t][dst] = gate[t][src]; chord[t][dst] = chord[t][src];
         std::memcpy(locks[t][dst], locks[t][src], kLockable);
     }
     // step of track t for absolute sequencer step k
@@ -70,10 +73,17 @@ struct Bank {
     uint8_t machine[kTracks];
     uint8_t mute[kTracks];
     uint8_t kit[kTracks][kKitFields]; // output, MIDI channel, transpose, legato, key tracking, arpeggiator
+    // settings for the whole instrument
+    struct Global {
+        uint8_t scale = 0, root = 0;          // global scale (0 = off: each track's own SCALE)
+        uint8_t linkFirst = 0, linkVoices = 0; // LINK group: tracks linkFirst .. linkFirst + linkVoices - 1 (0 = off)
+        uint8_t linkMode = lmPoly, linkCopy = 0, linkDetune = 20;
+    } glob;
 
     Bank() { resetKit(); }
     void resetKit()
     {
+        glob = Global();
         for (int t = 0; t < kTracks; ++t) {
             machine[t] = kDefaultKit[t]; mute[t] = 0;
             for (int f = 0; f < kKitFields; ++f) kit[t][f] = kKitDefault[f];
@@ -115,7 +125,7 @@ inline bool readHex(const char* s, uint8_t* d, size_t n)
 }
 
 // Track data blob: length + flags + locks + cond + micro + ratch + note + gate
-static constexpr size_t kTrackBlob = 1 + kSteps + kSteps * kLockable + 5 * kSteps;
+static constexpr size_t kTrackBlob = 1 + kSteps + kSteps * kLockable + 6 * kSteps;
 
 inline std::string trackToHex(const Pattern& p, int t)
 {
@@ -128,6 +138,7 @@ inline std::string trackToHex(const Pattern& p, int t)
     appendHex(s, p.ratch[t], kSteps);
     appendHex(s, p.note[t], kSteps);
     appendHex(s, p.gate[t], kSteps);
+    appendHex(s, p.chord[t], kSteps);
     return s;
 }
 inline bool trackFromHex(Pattern& p, int t, const char* h)
@@ -143,10 +154,12 @@ inline bool trackFromHex(Pattern& p, int t, const char* h)
     std::memcpy(p.micro[t], q, kSteps); q += kSteps;
     std::memcpy(p.ratch[t], q, kSteps); q += kSteps;
     std::memcpy(p.note[t], q, kSteps); q += kSteps;
-    std::memcpy(p.gate[t], q, kSteps);
+    std::memcpy(p.gate[t], q, kSteps); q += kSteps;
+    std::memcpy(p.chord[t], q, kSteps);
     for (int s = 0; s < kSteps; ++s) {
         if (p.note[t][s] > 127) p.note[t][s] = 60;
         if (p.gate[t][s] >= kGateCount) p.gate[t][s] = kDefaultGate;
+        if (p.chord[t][s] >= 10) p.chord[t][s] = 0;
         if (p.cond[t][s] >= kNumConds) p.cond[t][s] = 0;
         if (p.micro[t][s] > kMicroMax || p.micro[t][s] < -kMicroMax) p.micro[t][s] = 0;
     }
@@ -165,6 +178,9 @@ inline std::string serializeBank(const Bank& b)
         for (int f = 0; f < kKitFields; ++f)
             if (b.kit[t][f] != kKitDefault[f]) { std::snprintf(buf, sizeof(buf), "K %d %d %d\n", t, f, b.kit[t][f]); s += buf; }
     }
+    std::snprintf(buf, sizeof(buf), "G %d %d\nLK %d %d %d %d %d\n", b.glob.scale, b.glob.root,
+                  b.glob.linkFirst, b.glob.linkVoices, b.glob.linkMode, b.glob.linkCopy, b.glob.linkDetune);
+    s += buf;
     for (int pi = 0; pi < kPatterns; ++pi) {
         const Pattern& p = b.patterns[pi];
         std::snprintf(buf, sizeof(buf), "P %d %d %d %d %d\n", pi, p.length, p.scale, p.swing, p.accent);
@@ -182,6 +198,7 @@ inline std::string serializeBank(const Bank& b)
                 if (p.ratch[t][st] > 1) { std::snprintf(buf, sizeof(buf), "r %d %d %d %d\n", pi, t, st, p.ratch[t][st]); s += buf; }
                 if (p.note[t][st] != 60) { std::snprintf(buf, sizeof(buf), "n %d %d %d %d\n", pi, t, st, p.note[t][st]); s += buf; }
                 if (p.gate[t][st] != kDefaultGate) { std::snprintf(buf, sizeof(buf), "g %d %d %d %d\n", pi, t, st, p.gate[t][st]); s += buf; }
+                if (p.chord[t][st]) { std::snprintf(buf, sizeof(buf), "h %d %d %d %d\n", pi, t, st, p.chord[t][st]); s += buf; }
                 for (int k = 0; k < kLockable; ++k)
                     if (p.locks[t][st][k] != kNoLock) {
                         std::snprintf(buf, sizeof(buf), "l %d %d %d %d %d\n", pi, t, st, k, p.locks[t][st][k]);
@@ -232,13 +249,28 @@ inline int applyCommand(Bank& b, const char* line)
         b.kit[a][c] = (uint8_t)clampi(d, 0, kKitMax[c]);
         return kKitTouched;
     }
-    if (!std::strcmp(op, "c") || !std::strcmp(op, "m") || !std::strcmp(op, "r") || !std::strcmp(op, "n") || !std::strcmp(op, "g")) {
+    if (!std::strcmp(op, "G")) { // G scale root : global scale
+        if (std::sscanf(rest, "%d %d", &a, &c) != 2) return -1;
+        b.glob.scale = (uint8_t)clampi(a, 0, kScales - 1); b.glob.root = (uint8_t)clampi(c, 0, 11);
+        return kKitTouched;
+    }
+    if (!std::strcmp(op, "LK")) { // LK first voices mode copy detune : LINK group
+        if (std::sscanf(rest, "%d %d %d %d %d", &a, &c, &d, &e, &f) != 5) return -1;
+        b.glob.linkFirst = (uint8_t)clampi(a, 0, kTracks - 1);
+        b.glob.linkVoices = (uint8_t)(c < 2 ? 0 : clampi(c, 2, kTracks - b.glob.linkFirst));
+        b.glob.linkMode = (uint8_t)clampi(d, 0, kLinkModes - 1);
+        b.glob.linkCopy = e ? 1 : 0;
+        b.glob.linkDetune = (uint8_t)clampi(f, 0, 127);
+        return kKitTouched;
+    }
+    if (!std::strcmp(op, "c") || !std::strcmp(op, "m") || !std::strcmp(op, "r") || !std::strcmp(op, "n") || !std::strcmp(op, "g") || !std::strcmp(op, "h")) {
         if (std::sscanf(rest, "%d %d %d %d", &a, &c, &d, &e) != 4 || !validP(a) || !validT(c) || !validS(d)) return -1;
         Pattern& p = b.patterns[a];
         if (op[0] == 'c') p.cond[c][d] = (uint8_t)clampi(e, 0, kNumConds - 1);
         else if (op[0] == 'm') p.micro[c][d] = (int8_t)clampi(e, -kMicroMax, kMicroMax);
         else if (op[0] == 'r') p.ratch[c][d] = (uint8_t)clampi(e, 0, 8);
         else if (op[0] == 'n') p.note[c][d] = (uint8_t)clampi(e, 0, 127);
+        else if (op[0] == 'h') p.chord[c][d] = (uint8_t)clampi(e, 0, 9);
         else p.gate[c][d] = (uint8_t)clampi(e, 0, kGateCount - 1);
         return a;
     }

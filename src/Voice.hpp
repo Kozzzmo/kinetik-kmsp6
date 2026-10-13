@@ -27,6 +27,8 @@ struct MonoVoice {
     uint32_t ksW = 0; float ksLp = 0, ksApZ = 0, ksExcLeft = 0; OnePole ksExcLp; Svf body;
     // NOISE
     Svf nf; float grainAmp = 1.f;
+    // CHORD
+    uint32_t sinceOn = 0; OnePole chordLp;
     // slow automatic level control for the resonant machines (VOX, NOISE)
     float agcEnv = 0.06f, agcA = 0.0003f;
     inline float agc(float s, float target)
@@ -69,6 +71,7 @@ struct MonoVoice {
         if (machine == mSUPER) for (int i = 0; i < 7; ++i) ph[i] = rng.uni();
         if (machine == mPLUCK) { ksExcLeft = 1.f; ksExcLp.y = 0; }
         if (machine == mNOISE) grainAmp = 1.f;
+        if (machine == mCHORD) { sinceOn = 0; for (int i = 0; i < 8; ++i) ph[i] = rng.uni(); }
     }
 
     // --- helpers ---
@@ -297,6 +300,36 @@ struct MonoVoice {
                 }
                 if (x[5] > 0.f) { adv(phAux, f * isr); s = s * (1.f - 0.6f * x[5]) + x[5] * 0.6f * std::sin(kTwoPi * phAux); }
                 out[i] = drive(crush(s, x[3]), x[7]);
+            }
+            break;
+        }
+        case mCHORD: {
+            // 3 to 8 wavetable voices playing a chord: one envelope and one filter for all (paraphonic)
+            const ChordShape& cs = kChordShapeDefs[chordShapeIndex((int)std::lround(x[1] * 127.f))];
+            const int nv = std::min(8, chordVoices((int)std::lround(x[2] * 127.f)));
+            const int inv = std::min(nv - 1, (int)(x[3] * nv));
+            float ratio[8], gain[8];
+            uint32_t delay[8];
+            const float strum = x[6] * x[6] * 0.08f * sr;           // up to 80 ms between voices
+            for (int i = 0; i < nv; ++i) {
+                int semi = cs.notes[i % cs.n] + 12 * (i / cs.n);
+                if (i < inv) semi += 12;                                   // inversion: lowest notes move up
+                semi += 12 * (int)(x[4] * 2.f * (float)i / (float)nv);    // spread: upper voices climb octaves
+                const float det = (nv > 1 ? ((float)i / (nv - 1) - 0.5f) : 0.f) * x[5] * 0.3f;   // +-0.15 semitone
+                ratio[i] = std::exp2((semi + det) / 12.f);
+                delay[i] = (uint32_t)(strum * i);
+                gain[i] = 1.f;
+            }
+            const float frame = x[0] * 31.f, norm = 0.75f / std::sqrt((float)nv);
+            chordLp.setLP(expmap(x[7], 300.f, 18000.f), sr);
+            for (int k = 0; k < n; ++k, f += df, ++sinceOn) {
+                float s = 0.f;
+                for (int i = 0; i < nv; ++i) {
+                    const float fi = f * ratio[i];
+                    if (sinceOn >= delay[i]) s += waveRead(frame, ph[i], fi) * gain[i];
+                    adv(ph[i], fi * isr);
+                }
+                out[k] = chordLp.lp(s * norm);
             }
             break;
         }

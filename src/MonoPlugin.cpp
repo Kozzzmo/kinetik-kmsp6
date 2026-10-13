@@ -70,7 +70,7 @@ protected:
     const char* getDescription() const override { return "6-track monophonic synthesizer with note sequencer, arpeggiator and parameter locks"; }
     const char* getMaker() const override { return "Kinetik"; }
     const char* getLicense() const override { return "Proprietary"; }
-    uint32_t getVersion() const override { return d_version(0, 2, 1); }
+    uint32_t getVersion() const override { return d_version(0, 3, 0); }
 
     void initParameter(uint32_t index, Parameter& p) override
     {
@@ -250,6 +250,7 @@ protected:
                         std::memcpy(engine->bank.machine, master->machine, sizeof(master->machine));
                         std::memcpy(engine->bank.mute, master->mute, sizeof(master->mute));
                         std::memcpy(engine->bank.kit, master->kit, sizeof(master->kit));
+                        engine->bank.glob = master->glob;
                     }
                 }
                 for (const auto& n : pending) notes.push_back(n);

@@ -68,6 +68,10 @@ struct Track {
     // lfos
     float lfoPh[3] = {}, lfoHeld[3] = {}, lfoRnd[3] = {};
     float pitchMod = 0.f;
+    // LINK voice state
+    float uniDetune = 0.f;       // UNISON spread, in semitones
+    int linkNote = -1;           // live note this voice is holding (LINK)
+    uint32_t startSerial = 0;    // when the voice last started (LINK voice stealing)
     // locks
     uint8_t lockVal[kLockable] = {}; bool locked[kLockable] = {};
     float slideFrom[kLockable] = {}; bool sliding[kLockable] = {}; uint32_t slidePos = 0, slideLen = 1;
@@ -162,7 +166,15 @@ public:
     {
         knDenormalsOff();
         if (frames == 0) return;
-        for (int t = 0; t < kTracks; ++t) tracks[t].voice.setMachine(bank.machine[t]);
+        for (int t = 0; t < kTracks; ++t) tracks[t].voice.setMachine(machineOf(t));
+        // LINK: detune of each voice for UNISON
+        {
+            const int V = linkVoices();
+            for (int i = 0; i < kTracks; ++i) tracks[i].uniDetune = 0.f;
+            if (V >= 2 && bank.glob.linkMode == lmUnison)
+                for (int i = 0; i < V; ++i)
+                    tracks[bank.glob.linkFirst + i].uniDetune = ((float)i / (V - 1) - 0.5f) * bank.glob.linkDetune / 127.f;
+        }
 
         const bool playParam = global[gPLAY] > 0.5f;
         double bpm = tp.hostValid && tp.bpm > 1.0 ? tp.bpm : (double)global[gTEMPO];
@@ -271,6 +283,27 @@ public:
     }
 
     double stepBeats() const { return 0.25 / kScaleMult[bank.patterns[curPattern].scale % 7]; }
+
+    // ---- LINK group and global scale
+    int linkVoices() const
+    {
+        const int v = bank.glob.linkVoices;
+        return v >= 2 ? std::min(v, kTracks - (int)bank.glob.linkFirst) : 0;
+    }
+    int linkMaster(int t) const   // master track of the group t belongs to, or -1
+    {
+        const int V = linkVoices();
+        return (V >= 2 && t >= bank.glob.linkFirst && t < bank.glob.linkFirst + V) ? bank.glob.linkFirst : -1;
+    }
+    int soundSource(int t) const { const int m = linkMaster(t); return (m >= 0 && bank.glob.linkCopy) ? m : t; }
+    int machineOf(int t) const { return bank.machine[soundSource(t)]; }
+    int noteSource(int t) const { const int m = linkMaster(t); return m >= 0 ? m : t; }   // whose pitch / scale settings apply
+    void scaleOf(int t, int& scale, int& root) const
+    {
+        if (bank.glob.scale > 0) { scale = bank.glob.scale; root = bank.glob.root; return; }
+        const int s = noteSource(t);
+        scale = bank.kit[s][kfScale]; root = bank.kit[s][kfRoot];
+    }
     double stepSamples() const { return stepBeats() * 60.0 / curBpm * sr; }
     bool isSounding(int t) const { return tracks[t].stage != Track::stIdle; }
 
@@ -336,6 +369,8 @@ private:
         const uint8_t f = P.flags[t][s];
         if (!(f & sfTrig)) return;
         if (e.k == tr.recSkipK) return;
+        const int lm = linkMaster(t);
+        if (lm >= 0 && lm != t) return;          // the other tracks of a LINK group are voices: their own steps do not play
         if (e.sub == 0) {
             tr.decK = e.k;
             tr.decOk = evalCond(tr, P.cond[t][s], e.k, P.trackLen[t]);
@@ -350,6 +385,23 @@ private:
         const bool slide = (f & sfSlide) != 0;
         applyLocks(t, P.locks[t][s], slide, (uint32_t)(stepLen / n));
         const int note = P.note[t][s] + bank.kit[t][kfTrnsp] - 24;
+        if (lm == t) {
+            // LINK: the step's note (and chord) goes to the group's voices
+            const ChordDef& cd = kChords[P.chord[t][s] % 10];
+            const int V = linkVoices();
+            const int nn = bank.glob.linkMode == lmUnison ? 1 : std::min(cd.n, V);
+            for (int i = 0; i < nn; ++i) {
+                const int nnote = note + (bank.glob.linkMode == lmUnison ? 0 : cd.notes[i]);
+                const int cnt = bank.glob.linkMode == lmUnison ? V : 1;
+                for (int j = 0; j < cnt; ++j) {
+                    const int v = bank.glob.linkMode == lmUnison ? bank.glob.linkFirst + j : pickVoice();
+                    applyLocks(v, P.locks[t][s], slide, (uint32_t)(stepLen / n));
+                    tracks[v].linkNote = -1;
+                    startNote(v, nnote, (f & sfAccent) ? acc : 1.f, slide, (int64_t)std::max(1.0, gate));
+                }
+            }
+            return;
+        }
         startNote(t, note, (f & sfAccent) ? acc : 1.f, slide, (int64_t)std::max(1.0, gate));
     }
 
@@ -390,7 +442,8 @@ private:
     {
         Track& tr = tracks[t];
         computeEffective(t);
-        note = clampi(quantizeNote(note, bank.kit[t][kfScale], bank.kit[t][kfRoot]), 0, 127);
+        { int sc = 0, rt = 0; scaleOf(t, sc, rt); note = clampi(quantizeNote(note, sc, rt), 0, 127); }
+        tr.startSerial = ++serialCounter;
         const float port = tr.eff[tpPORT];
         tr.targetNote = (float)note;
         if (tr.stage == Track::stIdle) tr.curNote = (float)note;
@@ -454,6 +507,8 @@ private:
     void liveNoteOn(int t, int note, float vel, uint32_t frame)
     {
         if (t < 0 || t >= kTracks) return;
+        const int lm = linkMaster(t);
+        if (lm >= 0) { linkNoteOn(lm, note, vel, frame); return; }
         Track& tr = tracks[t];
         // remember the note (last-note priority)
         for (int i = 0; i < tr.heldCount; ++i) if (tr.heldNotes[i] == note) { std::memmove(tr.heldNotes + i, tr.heldNotes + i + 1, sizeof(int) * (tr.heldCount - i - 1)); --tr.heldCount; break; }
@@ -494,6 +549,8 @@ private:
     void liveNoteOff(int t, int note, uint32_t frame)
     {
         if (t < 0 || t >= kTracks) return;
+        const int lm = linkMaster(t);
+        if (lm >= 0) { linkNoteOff(lm, note, frame); return; }
         Track& tr = tracks[t];
         if (recording && blockPlaying && tr.recNote == note) {
             // store the held length as the step's gate (nearest available length)
@@ -524,7 +581,80 @@ private:
     float effParam(int t, int p) const
     {
         const Track& tr = tracks[t];
-        return tr.locked[p] ? (float)tr.lockVal[p] : trackParam[t][p];
+        return tr.locked[p] ? (float)tr.lockVal[p] : trackParam[soundSource(t)][p];
+    }
+
+    // ---- LINK voices
+    uint32_t serialCounter = 0;
+    int cycleNext = 0;
+    int pickVoice()
+    {
+        const int first = bank.glob.linkFirst, V = linkVoices();
+        switch (bank.glob.linkMode) {
+        case lmCycle: cycleNext = (cycleNext + 1) % V; return first + cycleNext;
+        case lmRandom: {
+            int v = (int)(condRng.uni() * V) % V;
+            if (V > 1 && first + v == lastPicked) v = (v + 1) % V;
+            return lastPicked = first + v;
+        }
+        default: {
+            // POLY: a free voice, else a released one, else the oldest
+            int best = -1; uint32_t bestSerial = UINT32_MAX;
+            for (int i = 0; i < V; ++i) if (tracks[first + i].stage == Track::stIdle) { const int v = first + i; if (tracks[v].startSerial < bestSerial) { best = v; bestSerial = tracks[v].startSerial; } }
+            if (best >= 0) return best;
+            for (int i = 0; i < V; ++i) if (tracks[first + i].stage == Track::stRelease) { const int v = first + i; if (tracks[v].startSerial < bestSerial) { best = v; bestSerial = tracks[v].startSerial; } }
+            if (best >= 0) return best;
+            for (int i = 0; i < V; ++i) { const int v = first + i; if (tracks[v].startSerial < bestSerial) { best = v; bestSerial = tracks[v].startSerial; } }
+            return best;
+        }
+        }
+    }
+    int lastPicked = -1;
+    void linkNoteOn(int m, int note, float vel, uint32_t frame)
+    {
+        const int played = clampi(note + bank.kit[m][kfTrnsp] - 24, 0, 127);
+        const int V = linkVoices();
+        if (bank.glob.linkMode == lmUnison) {
+            for (int i = 0; i < V; ++i) {
+                Track& tr = tracks[m + i];
+                tr.linkNote = note; tr.arpOn = false; tr.gateLeft = -1; tr.vel = vel;
+                noteTo(m + i, played, false, false);
+            }
+        } else {
+            const int v = pickVoice();
+            Track& tr = tracks[v];
+            tr.linkNote = note; tr.arpOn = false; tr.gateLeft = -1; tr.vel = vel;
+            noteTo(v, played, false, false);
+        }
+        ++trigCount[m];
+        Track& mt = tracks[m];
+        if (recording && blockPlaying) {
+            const double beat = blockB0 + frame * blockBpf;
+            const int64_t k = (int64_t)std::llround(beat / stepBeats());
+            const Pattern& P = bank.patterns[curPattern];
+            pushRec({curPattern, m, P.trackStep(m, k), note, vel > 1.05f, -1});
+            mt.recSkipK = k;
+            mt.recNote = note; mt.recStep = P.trackStep(m, k); mt.recPattern = curPattern; mt.recBeat = beat;
+        }
+    }
+    void linkNoteOff(int m, int note, uint32_t frame)
+    {
+        Track& mt = tracks[m];
+        if (recording && blockPlaying && mt.recNote == note) {
+            const double held = (blockB0 + frame * blockBpf - mt.recBeat) / stepBeats();
+            int best = 0;
+            for (int g = 1; g < kGateCount; ++g)
+                if (std::fabs(kGateSteps[g] - held) < std::fabs(kGateSteps[best] - held)) best = g;
+            pushRec({mt.recPattern, m, mt.recStep, note, false, best});
+            mt.recNote = -1;
+        }
+        const int V = linkVoices();
+        for (int i = 0; i < V; ++i) {
+            Track& tr = tracks[m + i];
+            if (tr.linkNote != note || tr.gateLeft != -1) continue;
+            tr.linkNote = -1; tr.gateLeft = 0;
+            if (tr.stage != Track::stIdle) tr.stage = Track::stRelease;
+        }
     }
 
     float lfoShape(int t, int l)
@@ -687,7 +817,7 @@ private:
         for (int t = 0; t < kTracks; ++t) {
             Track& tr = tracks[t];
             if (tr.stage != Track::stIdle) tr.idle = 0; else tr.idle += n;
-            if (tr.idle > (uint32_t)(sr * 0.5f) || bank.machine[t] == mOFF) continue;
+            if (tr.idle > (uint32_t)(sr * 0.5f) || machineOf(t) == mOFF) continue;
             controlTrack(t, n);
             if (tr.cVol == 0.f && tr.idle == 0) { tr.cVol = tr.vol; tr.cPanL = tr.panL; tr.cPanR = tr.panR; tr.cDel = tr.del; tr.cRev = tr.rev; }
             advanceTrack(t, n, envBuf);
@@ -701,11 +831,11 @@ private:
                 }
             }
             float* b = tr.buf.data();
-            tr.voice.render(b, (int)n, noteHz(n0 + tr.pitchMod), noteHz(tr.curNote + tr.pitchMod));
-            static const float kMachineGain[kMachines] = {0.f, 1.4f, 0.95f, 1.0f, 1.0f, 1.3f, 0.75f, 2.2f, 1.0f};
-            const float mg = kMachineGain[bank.machine[t] % kMachines];
+            tr.voice.render(b, (int)n, noteHz(n0 + tr.pitchMod + tr.uniDetune), noteHz(tr.curNote + tr.pitchMod + tr.uniDetune));
+            static const float kMachineGain[kMachines] = {0.f, 1.4f, 0.95f, 1.0f, 1.0f, 1.3f, 0.75f, 2.2f, 1.0f, 1.2f};
+            const float mg = kMachineGain[machineOf(t) % kMachines];
             for (uint32_t i = 0; i < n; ++i) b[i] *= mg;
-            const int bus = std::min<int>(kOutBuses - 1, bank.kit[t][kfOut]);
+            const int bus = std::min<int>(kOutBuses - 1, bank.kit[soundSource(t)][kfOut]);
             float* mL = busL[bus].data(); float* mR = busR[bus].data();
             const float dVol = (tr.vol - tr.cVol) * inv, dPL = (tr.panL - tr.cPanL) * inv, dPR = (tr.panR - tr.cPanR) * inv;
             const float dDel = (tr.del - tr.cDel) * inv, dRev = (tr.rev - tr.cRev) * inv;

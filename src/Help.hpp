@@ -92,6 +92,16 @@ static const MachineHelp kMachineHelp[kMachines] = {
       "Mixes a sine at the note pitch.",
       "LP mix: band-pass (0) to low-pass (127).",
       "Soft saturation."}},
+    // CHORD
+    {"A whole chord from one note: 3 to 8 wavetable voices through one envelope and one filter (paraphonic). Pads, stabs, chord leads. For separate envelopes per voice, use LINK.",
+     {"Wave: position in the wavetable (saw, square, vocal, organ...).",
+      "Chord: MAJ, MIN, SUS2, SUS4, MAJ7, MIN7, DOM7, MIN7b5, 6TH, MIN6, ADD9, MAJ9, MIN9, DIM, AUG, QUARTAL.",
+      "Voices: 3 to 8 (chord notes repeat an octave up to fill the voices).",
+      "Invert: moves the lowest notes up an octave (inversions).",
+      "Spread: opens the chord over more octaves.",
+      "Detune: slight detuning between the voices.",
+      "Strum: the voices start one after the other, like a strummed guitar.",
+      "Bright: tone of the chord (low-pass)."}},
 };
 
 // help for track parameters 8..55

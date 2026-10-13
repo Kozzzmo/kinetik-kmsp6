@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3
+
+- **LINK** (MASTER section, LINK tab): 2 to 6 tracks become the voices of one polyphonic instrument, played from
+  the first one (sequencer, keyboard, MIDI). Modes POLY, CYCLE (voices take turns), UNISON (all voices, detuned),
+  RANDOM; each voice keeps its sound or copies the first track's. Steps can carry a chord (new CHORD step mode).
+- **CHORD machine**: 3 to 8 wavetable voices playing a chord (16 shapes), with inversion, spread, detune, strum.
+- **Global scale** (bottom left): every track snaps to the same scale and root.
+- **128 steps** per track (8 pages).
+- **Multi-step editing**: each right-click adds a step to the selection; knobs and step modes edit all of them.
+- Randomizing a sound keeps the track's level, pan and sends.
+
 ## 0.2.1
 
 - Beta test: demo mode switched off (no silences, no licence needed). It comes back for the commercial release

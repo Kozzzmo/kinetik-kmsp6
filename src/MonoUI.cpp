@@ -39,18 +39,18 @@ struct R {
 
 enum Page { pgSynth, pgAmp, pgFilter, pgEfx, pgLfo1, pgLfo2, pgLfo3, pgTrack, pgArp, kPages };
 static const char* const kPageNames[kPages] = {"SYNTH", "AMP", "FILTER", "FX", "LFO 1", "LFO 2", "LFO 3", "TRACK", "ARP"};
-enum MPage { mpEcho, mpReverb, mpMaster };
-enum Mode { mdTrig, mdAccent, mdSlide, mdNote, mdLen, mdRatch, mdCond, mdTime, kModes };
-static const char* const kModeNames[kModes] = {"TRIG", "ACCENT", "SLIDE", "NOTE", "LEN", "RATCH", "COND", "TIME"};
+enum MPage { mpEcho, mpReverb, mpMaster, mpLink };
+enum Mode { mdTrig, mdAccent, mdSlide, mdNote, mdLen, mdRatch, mdCond, mdTime, mdChord, kModes };
+static const char* const kModeNames[kModes] = {"TRIG", "ACCENT", "SLIDE", "NOTE", "LEN", "RATCH", "COND", "TIME", "CHORD"};
 
-enum DragKind { dkNone, dkTrackKnob, dkMasterKnob, dkTempo, dkSwing, dkAccent, dkKit, dkStepNote, dkStepLen, dkKey };
+enum DragKind { dkNone, dkTrackKnob, dkMasterKnob, dkTempo, dkSwing, dkAccent, dkKit, dkStepNote, dkStepLen, dkKey, dkLink };
 enum Overlay { ovNone, ovPicker, ovPresets, ovHelp, ovSkins, ovSave, ovLicense, ovDest };
 enum DragExtra { dkResize = 100 };
 
 static const char* const kMachineShort[kMachines] = {
     "no sound", "dual saw / pulse / triangle", "PWM, sync, ring, crusher", "up to 7 detuned saws",
     "3-operator FM, 4 algorithms", "32-wave wavetable, scan, fold", "formant vowels A-E-I-O-U",
-    "physical string model", "pitched / coloured noise"};
+    "physical string model", "pitched / coloured noise", "3 to 8 voice wavetable chords"};
 
 class MonoUI : public UI
 {
@@ -161,6 +161,14 @@ protected:
     float gp(int g) const { return values[kGlobalBase + g]; }
     int editPattern() const { return clampi((int)std::lround(gp(gPATTERN)), 0, kPatterns - 1); }
     int machineOf(int t) const { return clampi(bank->machine[t], 0, kMachines - 1); }
+    // scale that applies to track t (the global one when it is on; LINK voices follow the first track)
+    void uiScaleOf(int t, int& sc, int& root) const
+    {
+        if (bank->glob.scale > 0) { sc = bank->glob.scale; root = bank->glob.root; return; }
+        const auto& g = bank->glob;
+        if (g.linkVoices >= 2 && t >= g.linkFirst && t < g.linkFirst + g.linkVoices) t = g.linkFirst;
+        sc = bank->kit[t][kfScale]; root = bank->kit[t][kfRoot];
+    }
     int64_t absStep() const { return (int64_t)std::lround(gp(gOUT_STEP)); } // -1 when stopped
     int trackStepNow(int t) { const int64_t k = absStep(); return k < 0 ? -1 : pat().trackStep(t, k); }
     int tlen(int t) { return pat().trackLen[t] ? pat().trackLen[t] : 16; }
@@ -304,6 +312,11 @@ protected:
             default: break;
             }
         }
+        if (p < 8 && machineOf(t) == mCHORD) {
+            if (p == 1) return kChordShapeDefs[chordShapeIndex(iv)].name;
+            if (p == 2) { std::snprintf(b, sizeof(b), "%d", chordVoices(iv)); return b; }
+            if (p == 3) { const int nv = chordVoices((int)std::lround(values[t * kTrackParams + 2])); std::snprintf(b, sizeof(b), "%d", std::min(nv - 1, (int)(v / 127.f * nv))); return b; }
+        }
         if (p < 8 && machineOf(t) == mSAW && p == 4) { std::snprintf(b, sizeof(b), "%+d", (int)std::lround(iv / 127.f * 4.f) - 2); return b; }
         if (p < 8 && machineOf(t) == mSUPER && p == 5) { std::snprintf(b, sizeof(b), "%+d", (int)std::lround(iv / 127.f * 4.f) - 2); return b; }
         if (p < 8 && machineOf(t) == mWAVE && p == 3) { std::snprintf(b, sizeof(b), "%+d", (int)std::lround(iv / 127.f * 4.f) - 2); return b; }
@@ -342,13 +355,13 @@ protected:
     R lockClear() const { return {596.f, 156.f, 94.f, 24.f}; }
     R pageTab(int i) const { return {20.f + i * 75.5f, 304.f, 72.f, 28.f}; }
     R knob(int k) const { return {20.f + k * 85.f, 340.f, 85.f, 120.f}; }
-    R mTab(int i) const { return {720.f + i * 148.f, 146.f, 144.f, 28.f}; }
+    R mTab(int i) const { return {720.f + i * 111.f, 146.f, 107.f, 28.f}; }
     R mKnob(int k) const { return {720.f + (k % 4) * 110.f, 178.f + (k / 4) * 102.f, 110.f, 100.f}; }
     R patBtn(int i) const { return {720.f + (i % 8) * 55.f, 432.f + (i / 8) * 30.f, 51.f, 26.f}; }
     R patCopy() const { return {946.f, 400.f, 68.f, 24.f}; }
     R patPaste() const { return {1018.f, 400.f, 68.f, 24.f}; }
     R patClear() const { return {1090.f, 400.f, 68.f, 24.f}; }
-    R modeBtn(int i) const { return {20.f + i * 55.f, 504.f, 52.f, 26.f}; }
+    R modeBtn(int i) const { return {20.f + i * 49.f, 504.f, 47.f, 26.f}; }
     R stepPage(int i) const { return {464.f + i * 25.f, 504.f, 23.f, 26.f}; }   // 8 pages of 16 steps
     R lenMinus() const { return {666.f, 504.f, 22.f, 26.f}; }
     R lenBox() const { return {690.f, 504.f, 56.f, 26.f}; }
@@ -382,9 +395,12 @@ protected:
     R gripR() const { return {W - 22.f, H - 22.f, 22.f, 22.f}; }
     // bottom bar
     R recBtn() const { return {20.f, 712.f, 96.f, 40.f}; }
-    R rndGroup() const { return {124.f, 706.f, 574.f, 52.f}; }
-    R rndBtn(int i) const { return {250.f + i * 111.f, 712.f, 105.f, 40.f}; }
-    R undoBtn() const { return {712.f, 712.f, 86.f, 40.f}; }
+    R scaleGroup() const { return {124.f, 706.f, 222.f, 52.f}; }
+    R gScaleBox() const { return {196.f, 712.f, 92.f, 40.f}; }
+    R gRootBox() const { return {292.f, 712.f, 48.f, 40.f}; }
+    R rndGroup() const { return {354.f, 706.f, 510.f, 52.f}; }
+    R rndBtn(int i) const { return {448.f + i * 103.f, 712.f, 99.f, 40.f}; }
+    R undoBtn() const { return {870.f, 712.f, 76.f, 40.f}; }
     R presetBtn() const { return {1010.f, 704.f, 150.f, 34.f}; }
     R saveBtn() const { return {1010.f, 742.f, 150.f, 34.f}; }
     // presets window
@@ -411,8 +427,8 @@ protected:
     R pickerBox() const { return {170.f, 170.f, 840.f, 420.f}; }
     R pickerCell(int m) const
     {
-        const int i = m == mOFF ? 8 : m - 1; // OFF last
-        return {196.f + (i % 3) * 266.f, 240.f + (i / 3) * 106.f, 254.f, 94.f};
+        const int i = m == mOFF ? kMachines - 1 : m - 1; // OFF last
+        return {196.f + (i % 3) * 266.f, 232.f + (i / 3) * 86.f, 254.f, 78.f};
     }
 
     // ------------------------------------------------------------------ keyboard geometry
@@ -718,6 +734,11 @@ protected:
             const int ch = bank->kit[t][kfMidi];
             if (ch > 0) { std::snprintf(b, sizeof(b), "CH%d ", ch); info += b; }
             if (bank->kit[t][kfArpMode] > 0) { info += "ARP "; }
+            {
+                const auto& g = bank->glob;
+                if (g.linkVoices >= 2 && t >= g.linkFirst && t < g.linkFirst + g.linkVoices)
+                    info += t == g.linkFirst ? ("LINK x" + std::to_string(g.linkVoices) + " ") : std::string("VOICE ");
+            }
             if (bank->kit[t][kfLegato]) info += "LEG ";
             label(r.x + 10, r.y + 47, info.c_str(), 9.5f, Color(fg, Color(0, 0, 0, 0.f), 0.7f), ALIGN_LEFT | ALIGN_MIDDLE);
             if (direct && lit) {
@@ -1136,7 +1157,8 @@ protected:
     // ---- TRACK: pitch, scale on a keyboard, output and MIDI
     void drawTrackGraphic(const R& g)
     {
-        const int sc = bank->kit[selTrack][kfScale], root = bank->kit[selTrack][kfRoot];
+        int sc = 0, root = 0; uiScaleOf(selTrack, sc, root);
+        const bool globalScale = bank->glob.scale > 0;
         const int shift = bank->kit[selTrack][kfTrnsp] - 24;
         // two octaves from C, scale notes lit, root marked
         const R kb{g.x, g.y + 6, 420, g.h - 28};
@@ -1162,7 +1184,8 @@ protected:
                 if (sc && n == root) { beginPath(); circle(k.cx(), k.y + k.h - 8, 3.5f); fillColor(th->lock); fill(); }
             }
         char b[48];
-        if (sc) std::snprintf(b, sizeof(b), "%s %s  -  notes snap to the scale", kNoteNames12[root], kScaleDefs[sc].name);
+        if (sc && globalScale) std::snprintf(b, sizeof(b), "%s %s  -  GLOBAL SCALE (bottom left)", kNoteNames12[root], kScaleDefs[sc].name);
+        else if (sc) std::snprintf(b, sizeof(b), "%s %s  -  notes snap to the scale", kNoteNames12[root], kScaleDefs[sc].name);
         else std::snprintf(b, sizeof(b), "SCALE OFF  -  every note plays as written");
         label(kb.x, g.y + g.h - 8, b, 9.5f, sc ? th->lcdText : th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
         // right: pitch, output, MIDI, legato
@@ -1325,12 +1348,73 @@ protected:
         }
     }
 
+    // ------------------------------------------------------------------ LINK (performer: tracks as voices of one instrument)
+    int linkValue(int k) const
+    {
+        const auto& g = bank->glob;
+        switch (k) { case 0: return g.linkVoices; case 1: return g.linkFirst; case 2: return g.linkMode; case 3: return g.linkCopy; default: return g.linkDetune; }
+    }
+    static int linkMax(int k) { return k == 0 ? kTracks : (k == 1 ? kTracks - 2 : (k == 2 ? kLinkModes - 1 : (k == 3 ? 1 : 127))); }
+    void setLink(int k, int v)
+    {
+        auto g = bank->glob;
+        v = clampi(v, 0, linkMax(k));
+        switch (k) {
+        case 0: g.linkVoices = (uint8_t)(v == 1 ? (g.linkVoices == 0 ? 2 : 0) : v); break;
+        case 1: g.linkFirst = (uint8_t)v; break;
+        case 2: g.linkMode = (uint8_t)v; break;
+        case 3: g.linkCopy = (uint8_t)v; break;
+        default: g.linkDetune = (uint8_t)v; break;
+        }
+        if (g.linkVoices >= 2 && g.linkFirst + g.linkVoices > kTracks) g.linkVoices = (uint8_t)(kTracks - g.linkFirst);
+        char b[64]; std::snprintf(b, sizeof(b), "LK %d %d %d %d %d", g.linkFirst, g.linkVoices, g.linkMode, g.linkCopy, g.linkDetune);
+        sendCmd(b);
+        repaint();
+    }
+    void drawLink()
+    {
+        const auto& g = bank->glob;
+        const bool on = g.linkVoices >= 2;
+        char b[32];
+        static const char* names[5] = {"VOICES", "FIRST", "MODE", "SOUND", "DETUNE"};
+        for (int k = 0; k < 5; ++k) {
+            const int v = linkValue(k);
+            std::string t;
+            switch (k) {
+            case 0: t = on ? std::to_string(v) : "OFF"; break;
+            case 1: std::snprintf(b, sizeof(b), "T%d", v + 1); t = b; break;
+            case 2: t = kLinkModeNames[v % kLinkModes]; break;
+            case 3: t = v ? "COPY" : "OWN"; break;
+            default: t = std::to_string(v); break;
+            }
+            const bool enabled = k == 0 || (on && (k != 4 || g.linkMode == lmUnison));
+            drawKnob(mKnob(k), (float)v / linkMax(k), names[k], t, false, drag == dkLink && dragIndex == k, enabled);
+        }
+        // group diagram: the six tracks, the linked ones joined, the first = where you play / sequence
+        const float x0 = 836.f, y0 = 314.f, w = 50.f;
+        label(x0, y0 - 12, on ? "PLAY TRACK  > VOICES" : "LINK OFF", 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        for (int t = 0; t < kTracks; ++t) {
+            const R r{x0 + t * (w + 4), y0, w, 30};
+            const bool in = on && t >= g.linkFirst && t < g.linkFirst + g.linkVoices;
+            if (in) box(r, t == g.linkFirst ? th->selFill : Color(th->selFill, th->panel, 0.55f)); else frame(r, th->btnEdge);
+            std::snprintf(b, sizeof(b), "%d", t + 1);
+            number(r.cx(), r.cy() + 1, b, 15.f, in ? th->selText : th->faint);
+        }
+        if (on) {
+            static const char* info[kLinkModes] = {"a free voice for each note", "voices take turns", "all voices, detuned", "a random voice"};
+            label(x0, y0 + 44, info[g.linkMode % kLinkModes], 10.f, th->text, ALIGN_LEFT | ALIGN_MIDDLE);
+            label(x0, y0 + 60, g.linkCopy ? "all voices use the sound of the first" : "each voice keeps its own sound", 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        }
+    }
+
     void drawMaster()
     {
         panelBox({710, 140, 460, 344});
-        static const char* tabs[3] = {"ECHO", "REVERB", "MASTER"};
-        for (int i = 0; i < 3; ++i) button(mTab(i), tabs[i], mpage == i, 11.5f);
-        for (int k = 0; k < 8; ++k) {
+        static const char* tabs[4] = {"ECHO", "REVERB", "MASTER", "LINK"};
+        for (int i = 0; i < 4; ++i) button(mTab(i), tabs[i], mpage == i, 11.5f);
+        if (bank->glob.linkVoices >= 2 && mpage != mpLink) { const R t = mTab(3); beginPath(); circle(t.x + t.w - 12, t.cy(), 3.5f); fillColor(th->accent); fill(); }
+        if (mpage == mpLink) drawLink();
+        else for (int k = 0; k < 8; ++k) {
             const int g = masterParam(mpage, k);
             if (g < 0) { drawKnob(mKnob(k), 0, "", "", false, false, false); continue; }
             const float v = gp(g);
@@ -1425,6 +1509,7 @@ protected:
                 char eb[16];
                 if (p.ratch[selTrack][s] > 1) { std::snprintf(eb, sizeof(eb), "x%d ", p.ratch[selTrack][s]); ex += eb; }
                 if (p.cond[selTrack][s]) { ex += kConds[p.cond[selTrack][s]].name; ex += " "; }
+                if (p.chord[selTrack][s]) { ex += kChords[p.chord[selTrack][s] % 10].name; ex += " "; }
                 if (p.micro[selTrack][s]) { std::snprintf(eb, sizeof(eb), "%+d", p.micro[selTrack][s]); ex += eb; }
                 if (!ex.empty()) label(r.cx(), r.y + 68, ex.c_str(), 9.f, th->extra);
             }
@@ -1453,7 +1538,8 @@ protected:
             if (n == playing) return Color(th->accent, black ? blackKey : whiteKey, 0.35f);
             if (n == stepNote) return th->lock;
             // scale lock: keys that are not in the track's scale are dimmed (they snap to a neighbour)
-            if (!inScale(n + bank->kit[selTrack][kfTrnsp] - 24, bank->kit[selTrack][kfScale], bank->kit[selTrack][kfRoot]))
+            int ksc = 0, kroot = 0; uiScaleOf(selTrack, ksc, kroot);
+            if (!inScale(n + bank->kit[selTrack][kfTrnsp] - 24, ksc, kroot))
                 return Color(black ? blackKey : whiteKey, th->panel, 0.6f);
             return black ? blackKey : whiteKey;
         };
@@ -1500,8 +1586,8 @@ protected:
             const R r = pickerCell(m);
             const bool sel = m == cur;
             if (sel) box(r, th->selFill); else { box(r, th->btnFill); frame(r, th->btnEdge); }
-            number(r.x + 16, r.y + 32, kMachineDefs[m].name, 20.f, sel ? th->selText : th->text, ALIGN_LEFT | ALIGN_MIDDLE);
-            label(r.x + 16, r.y + 66, kMachineShort[m], 10.f, sel ? th->selText : th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+            number(r.x + 16, r.y + 28, kMachineDefs[m].name, 20.f, sel ? th->selText : th->text, ALIGN_LEFT | ALIGN_MIDDLE);
+            label(r.x + 16, r.y + 56, kMachineShort[m], 10.f, sel ? th->selText : th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
         }
     }
 
@@ -1518,11 +1604,23 @@ protected:
             box(rb, th->btnFill); frame(rb, th->btnEdge, -1.f, 1.5f);
             iconLabel(rb.cx(), rb.cy() + 1, icRec, "REC", 13.f, th->logo == lgRiso ? th->text : th->accent);
         }
+        const Color gt = th->logo == lgRiso ? th->text : th->dim;
+        {   // global scale: every track snaps to it
+            const R sg = scaleGroup();
+            box(sg, th->inner);
+            label(134, sg.y + 20, "SCALE", 10.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
+            label(134, sg.y + 37, "all tracks", 9.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
+            const bool on = bank->glob.scale > 0;
+            const R a = gScaleBox(), b = gRootBox();
+            if (on) box(a, th->selFill); else { box(a, th->btnFill); frame(a, th->btnEdge); }
+            label(a.cx(), a.cy() + 1, kScaleDefs[bank->glob.scale % kScales].name, 10.5f, on ? th->selText : th->btnText);
+            box(b, th->btnFill); frame(b, th->btnEdge);
+            label(b.cx(), b.cy() + 1, kNoteNames12[bank->glob.root % 12], 11.f, on ? th->btnText : th->faint);
+        }
         const R grp = rndGroup();
         box(grp, th->inner);
-        const Color gt = th->logo == lgRiso ? th->text : th->dim;
-        label(134, grp.y + 20, "RANDOMIZE", 10.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
-        label(134, grp.y + 37, "undo restores", 9.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
+        label(grp.x + 10, grp.y + 20, "RANDOMIZE", 10.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
+        label(grp.x + 10, grp.y + 37, "undo restores", 9.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
         static const char* rn[4] = {"SOUND", "SEQUENCE", "PATTERN", "EVERYTHING"};
         static const char* rs[4] = {"this track", "this track", "all tracks", "kit+fx+pattern"};
         for (int i = 0; i < 4; ++i) {
@@ -2050,6 +2148,8 @@ protected:
             op = 'r'; v = kRatchValues[idx];
         } else if (mode == mdCond) {
             op = 'c'; v = dbl ? 0 : (p.cond[selTrack][s] + (right ? kNumConds - 1 : 1)) % kNumConds;
+        } else if (mode == mdChord) {
+            op = 'h'; v = dbl ? 0 : (p.chord[selTrack][s] + (right ? 9 : 1)) % 10;
         } else {
             const int st = shift ? 4 : 1;
             v = dbl ? 0 : clampi(p.micro[selTrack][s] + (right ? -st : st), -kMicroMax, kMicroMax);
@@ -2284,6 +2384,12 @@ protected:
         const float x = ev.pos.getX() / sx, y = ev.pos.getY() / sx;
         if (!ev.press) {
             if (keyNote >= 0) { playNote(keyTrack, keyNote, 0, false); keyNote = -1; }
+            if (drag == dkLink && std::fabs(y - dragY) < 3.f) {
+                const int k = dragIndex;
+                if (k == 0) setLink(0, bank->glob.linkVoices >= 2 ? 0 : std::min(4, kTracks - (int)bank->glob.linkFirst));
+                else if (k < 4) setLink(k, (linkValue(k) + 1) % (linkMax(k) + 1));
+                drag = dkNone; repaint(); return true;
+            }
             if (drag == dkTrackKnob && std::fabs(y - dragY) < 3.f && page >= pgLfo1 && page <= pgLfo3 && (dragIndex == 4 || dragIndex == 5)) {
                 editParameter(selTrack * kTrackParams + pageParam(page, dragIndex), false);
                 drag = dkNone; openDestMenu(page - pgLfo1);    // a click (no drag) on DEST / TARGET opens the list
@@ -2386,7 +2492,23 @@ protected:
             repaint(); return true;
         }
         for (int i = 0; i < kPages; ++i) if (pageTab(i).in(x, y)) { page = i; repaint(); return true; }
-        for (int i = 0; i < 3; ++i) if (mTab(i).in(x, y)) { mpage = i; repaint(); return true; }
+        for (int i = 0; i < 4; ++i) if (mTab(i).in(x, y)) { mpage = i; repaint(); return true; }
+        if (mpage == mpLink)
+            for (int k = 0; k < 5; ++k) {
+                if (!mKnob(k).in(x, y)) continue;
+                if (dbl) { static const int defs[5] = {0, 0, lmPoly, 0, 20}; setLink(k, defs[k]); return true; }
+                drag = dkLink; dragIndex = k; dragY = y; dragStart = (float)linkValue(k);
+                repaint(); return true;
+            }
+        // global scale (bottom left): click = next, right-click = previous, double-click = off
+        if (gScaleBox().in(x, y)) {
+            const int v = dbl ? 0 : (bank->glob.scale + (right ? kScales - 1 : 1)) % kScales;
+            char b[32]; std::snprintf(b, sizeof(b), "G %d %d", v, bank->glob.root); sendCmd(b); repaint(); return true;
+        }
+        if (gRootBox().in(x, y)) {
+            const int v = dbl ? 0 : (bank->glob.root + (right ? 11 : 1)) % 12;
+            char b[32]; std::snprintf(b, sizeof(b), "G %d %d", bank->glob.scale, v); sendCmd(b); repaint(); return true;
+        }
 
         for (int k = 0; k < 8; ++k) {
             if (!knob(k).in(x, y) || kitField(k) < 0) continue;
@@ -2567,6 +2689,12 @@ protected:
             break;
         }
         case dkMasterKnob: setMaster(dragIndex, v); break;
+        case dkLink: {
+            const float sens = dragIndex == 4 ? 0.6f : 0.05f;
+            const int nv = clampi((int)std::lround(dragStart + (dragY - y) * sens), 0, linkMax(dragIndex));
+            if (nv != linkValue(dragIndex) && !(dragIndex == 0 && nv == 1)) setLink(dragIndex, nv);
+            break;
+        }
         case dkTempo: {
             const float tv = clampf(std::round((dragStart + (dragY - y) * ((ev.mod & kModifierShift) ? 0.05f : 0.5f)) * 10.f) / 10.f, 40.f, 240.f);
             setParam(kGlobalBase + gTEMPO, tv); repaint(); break;

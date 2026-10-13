@@ -76,5 +76,29 @@ int main(){
       for(int b=0;b<1500;b++){ e->process(L.data(),R.data(),256,tp,b==40?&of:nullptr,b==40?1:0); for(int i=0;i<256;i++){ if(!std::isfinite(L[i])||!std::isfinite(R[i])) clean=false; worst=std::max(worst,std::fabs(L[i])); } }
       delete e; }
     CHECK(clean && worst<=1.0f,"echo x reverb models stable at full level"); }
+  // 11. LINK: live notes spread over the voices (POLY), a sequenced chord plays on 3 voices, UNISON uses all
+  { Engine* e=mk(); for(int t=0;t<4;t++) e->bank.machine[t]=mSAW; e->bank.glob.linkFirst=0; e->bank.glob.linkVoices=4; e->bank.glob.linkMode=lmPoly;
+    NoteEvent ev[3]={{0,0,1.f,60,true},{0,0,1.f,64,true},{0,0,1.f,67,true}};
+    e->process(L.data(),R.data(),256,tp,ev,3); for(int b=0;b<4;b++) e->process(L.data(),R.data(),256,tp,nullptr,0);
+    std::set<int> notes; for(int t=0;t<4;t++) if(e->isSounding(t)) notes.insert(e->outNote[t]);
+    CHECK(notes.count(60)&&notes.count(64)&&notes.count(67),"LINK POLY: three held notes on three voices"); delete e; }
+  { Engine* e=mk(); for(int t=0;t<4;t++) e->bank.machine[t]=mSAW; e->bank.glob.linkFirst=0; e->bank.glob.linkVoices=4; e->bank.glob.linkMode=lmCycle;
+    Pattern&P=e->bank.patterns[0]; P.flags[0][0]=sfTrig; P.note[0][0]=60; P.chord[0][0]=2; P.gate[0][0]=8; // minor chord
+    e->global[gPLAY]=1; for(int b=0;b<20;b++) e->process(L.data(),R.data(),256,tp,nullptr,0);
+    std::set<int> notes; for(int t=0;t<4;t++) if(e->isSounding(t)) notes.insert(e->outNote[t]);
+    CHECK(notes.count(60)&&notes.count(63)&&notes.count(67),"LINK: a step chord plays on the voices"); delete e; }
+  { Engine* e=mk(); for(int t=0;t<3;t++) e->bank.machine[t]=mSAW; e->bank.glob.linkFirst=0; e->bank.glob.linkVoices=3; e->bank.glob.linkMode=lmUnison;
+    NoteEvent on{0,1,1.f,62,true}; e->process(L.data(),R.data(),256,tp,&on,1); for(int b=0;b<4;b++) e->process(L.data(),R.data(),256,tp,nullptr,0);
+    int n=0; for(int t=0;t<3;t++) n+= e->isSounding(t) && e->outNote[t]==62;
+    CHECK(n==3,"LINK UNISON: every voice plays the note (played from a member track)"); delete e; }
+  // 12. global scale overrides the tracks
+  { Engine* e=mk(); e->bank.glob.scale=1; e->bank.glob.root=0; NoteEvent on{0,0,1.f,61,true};
+    e->process(L.data(),R.data(),256,tp,&on,1); for(int b=0;b<4;b++) e->process(L.data(),R.data(),256,tp,nullptr,0);
+    CHECK(inScale(e->outNote[0],1,0),"global scale snaps the notes"); delete e; }
+  // 13. CHORD machine renders
+  { Engine* e=mk(); e->bank.machine[0]=mCHORD; for(int p=0;p<8;p++) e->trackParam[0][p]=kMachineDefs[mCHORD].def[p];
+    NoteEvent on{0,0,1.f,48,true}; e->process(L.data(),R.data(),256,tp,&on,1); float pk=0; bool ok=true;
+    for(int b=0;b<100;b++){ e->process(L.data(),R.data(),256,tp,nullptr,0); for(float x:L){ pk=std::max(pk,std::fabs(x)); if(!std::isfinite(x)) ok=false; } }
+    printf("     chord peak %.2f\n",pk); CHECK(ok && pk>0.05f && pk<1.0f,"CHORD machine renders"); delete e; }
   printf(fails?"%d FAILED\n":"all passed\n",fails); return fails;
 }
