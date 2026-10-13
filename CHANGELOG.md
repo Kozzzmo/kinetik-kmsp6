@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6
+
+- The note a track is playing is shown in the top row of its button (it covered the S / M buttons)
+
 ## 0.4.5
 
 - **Master filter** (new FILTER tab next to MASTER): HIGH PASS and LOW PASS with RESONANCE, after the echo, reverb

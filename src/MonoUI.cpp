@@ -782,7 +782,7 @@ protected:
             label(r.x + 10, r.y + 47, info.c_str(), 9.5f, Color(fg, Color(0, 0, 0, 0.f), 0.7f), ALIGN_LEFT | ALIGN_MIDDLE);
             if (direct && lit) {
                 const int n = direct->currentNote(t);
-                if (n >= 0) { char nb[8]; number(r.x + r.w - 40, r.y + 46, noteName(n, nb, sizeof(nb)), 15.f, fg, ALIGN_RIGHT | ALIGN_MIDDLE); }
+                if (n >= 0) { char nb[8]; number(r.x + r.w - 32, r.y + 20, noteName(n, nb, sizeof(nb)), 15.f, fg, ALIGN_RIGHT | ALIGN_MIDDLE); }   // top row, left of the LED (clear of S / M)
             }
             const bool muted = bank->mute[t] != 0;
             const R mh = muteBtn(t);
