@@ -40,7 +40,7 @@ struct R {
 
 enum Page { pgSynth, pgAmp, pgFilter, pgEfx, pgLfo1, pgLfo2, pgLfo3, pgTrack, pgArp, kPages };
 static const char* const kPageNames[kPages] = {"SYNTH", "AMP", "FILTER", "FX", "LFO 1", "LFO 2", "LFO 3", "TRACK", "ARP"};
-enum MPage { mpEcho, mpReverb, mpMaster, mpLink };
+enum MPage { mpEcho, mpReverb, mpMaster, mpFilter, mpLink, kMPages };
 enum Mode { mdTrig, mdAccent, mdSlide, mdNote, mdLen, mdRatch, mdCond, mdTime, mdChord, kModes };
 static const char* const kModeNames[kModes] = {"TRIG", "ACCENT", "SLIDE", "NOTE", "LEN", "RATCH", "COND", "TIME", "CHORD"};
 
@@ -271,6 +271,7 @@ protected:
     {
         if (mp == mpEcho) return k < 6 ? gECHO_TIME + k : (k == 6 ? gECHO_MODEL : gECHO_MOD);
         if (mp == mpReverb) return k < 6 ? gREV_SIZE + k : (k == 6 ? gREV_MODEL : gREV_MOD);
+        if (mp == mpFilter) return k < 3 ? gMF_HP + k : -1;
         return gEQ_LOW + k;
     }
 
@@ -355,6 +356,9 @@ protected:
             std::snprintf(b, sizeof(b), "%+.1fdB", 20.f * std::log10(gn)); return b;
         }
         if (g == gREV_GATE && iv == 0) return "OFF";
+        if (g == gMF_HP) return iv <= 0 ? std::string("OFF") : hzText(cutoffHz(v));
+        if (g == gMF_LP) return iv >= 127 ? std::string("OFF") : hzText(cutoffHz(v));
+        if (g == gMF_RESO) { std::snprintf(b, sizeof(b), "%d%%", (int)std::lround(v / 127.f * 100.f)); return b; }
         if (g == gEQ_LOW || g == gEQ_HIGH) { std::snprintf(b, sizeof(b), "%+d", iv - 64); return b; }
         std::snprintf(b, sizeof(b), "%d", iv); return b;
     }
@@ -370,7 +374,7 @@ protected:
     R lockClear() const { return {596.f, 156.f, 94.f, 24.f}; }
     R pageTab(int i) const { return {20.f + i * 75.5f, 304.f, 72.f, 28.f}; }
     R knob(int k) const { return {20.f + k * 85.f, 340.f, 85.f, 120.f}; }
-    R mTab(int i) const { return {720.f + i * 111.f, 146.f, 107.f, 28.f}; }
+    R mTab(int i) const { return {720.f + i * 89.f, 146.f, 85.f, 28.f}; }
     R mKnob(int k) const { return {720.f + (k % 4) * 110.f, 178.f + (k / 4) * 102.f, 110.f, 100.f}; }
     R patBtn(int i) const { return {720.f + (i % 8) * 55.f, 432.f + (i / 8) * 30.f, 51.f, 26.f}; }
     R patCopy() const { return {946.f, 400.f, 68.f, 24.f}; }
@@ -1461,9 +1465,11 @@ protected:
     void drawMaster()
     {
         panelBox({710, 140, 460, 344});
-        static const char* tabs[4] = {"ECHO", "REVERB", "MASTER", "LINK"};
-        for (int i = 0; i < 4; ++i) button(mTab(i), tabs[i], mpage == i, 11.5f);
-        if (bank->glob.linkVoices >= 2 && mpage != mpLink) { const R t = mTab(3); beginPath(); circle(t.x + t.w - 12, t.cy(), 3.5f); fillColor(th->accent); fill(); }
+        static const char* tabs[kMPages] = {"ECHO", "REVERB", "MASTER", "FILTER", "LINK"};
+        for (int i = 0; i < kMPages; ++i) button(mTab(i), tabs[i], mpage == i, 11.f);
+        // a dot on FILTER / LINK when they are active
+        if (mpage != mpFilter && (gp(gMF_HP) > 0.5f || gp(gMF_LP) < 126.5f)) { const R t = mTab(mpFilter); beginPath(); circle(t.x + t.w - 10, t.cy(), 3.5f); fillColor(th->accent); fill(); }
+        if (bank->glob.linkVoices >= 2 && mpage != mpLink) { const R t = mTab(mpLink); beginPath(); circle(t.x + t.w - 12, t.cy(), 3.5f); fillColor(th->accent); fill(); }
         if (mpage == mpLink) drawLink();
         else for (int k = 0; k < 8; ++k) {
             const int g = masterParam(mpage, k);
@@ -2591,7 +2597,7 @@ protected:
             repaint(); return true;
         }
         for (int i = 0; i < kPages; ++i) if (pageTab(i).in(x, y)) { page = i; repaint(); return true; }
-        for (int i = 0; i < 4; ++i) if (mTab(i).in(x, y)) { mpage = i; repaint(); return true; }
+        for (int i = 0; i < kMPages; ++i) if (mTab(i).in(x, y)) { mpage = i; repaint(); return true; }
         if (mpage == mpLink)
             for (int k = 0; k < 5; ++k) {
                 if (!mKnob(k).in(x, y)) continue;

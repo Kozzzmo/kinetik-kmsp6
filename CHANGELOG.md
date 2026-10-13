@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.5
+
+- **Master filter** (new FILTER tab next to MASTER): HIGH PASS and LOW PASS with RESONANCE, after the echo, reverb
+  and master chain, so it sweeps the whole mix. OFF at both ends; a dot on the tab shows it is active.
+
 ## 0.4.4
 
 - **Solo** button (S) next to mute on every track: when a track is soloed, only the soloed tracks play

@@ -59,6 +59,7 @@ enum GlobalParam {
     gREV_SIZE, gREV_DAMP, gREV_GATE, gREV_HPF, gREV_PRE, gREV_LEV,
     gEQ_LOW, gEQ_HIGH, gCMP_THR, gCMP_RAT, gCMP_ATK, gCMP_REL, gDRIVE, gVOLUME,
     gECHO_MODEL, gECHO_MOD, gREV_MODEL, gREV_MOD,
+    gMF_HP, gMF_LP, gMF_RESO,          // master filter (KMSP-6 only, after the master FX)
     gOUT_STEP, gOUT_LEDS, gOUT_PATTERN,
     kGlobalParams
 };
@@ -66,18 +67,20 @@ static constexpr int kGlobalBase = kTracks * kTrackParams;
 static constexpr int kTotalParams = kGlobalBase + kGlobalParams;
 
 // master parameters gECHO_TIME .. gREV_MOD (index g - gECHO_TIME)
-static constexpr int kMasterCount = gREV_MOD - gECHO_TIME + 1;
+static constexpr int kMasterCount = gMF_RESO - gECHO_TIME + 1;
 static const char* const kMasterNames[kMasterCount] = {
     "TIME", "FEEDBACK", "HIGH CUT", "LOW CUT", "WIDTH", "LEVEL",
     "DECAY", "DAMPING", "GATE", "LOW CUT", "PRE-DELAY", "LEVEL",
     "LOW", "HIGH", "THRESH", "RATIO", "ATTACK", "RELEASE", "DRIVE", "VOLUME",
-    "MODEL", "MOD", "MODEL", "MOD"
+    "MODEL", "MOD", "MODEL", "MOD",
+    "HIGH PASS", "LOW PASS", "RESONANCE"
 };
 static const uint8_t kMasterDefaults[kMasterCount] = {
     48, 50, 100, 10, 64, 64,
     60, 64, 0, 20, 10, 64,
     64, 64, 127, 40, 20, 50, 0, 100,
-    0, 30, 52, 30
+    0, 30, 52, 30,
+    0, 127, 0
 };
 
 // ---- machines ----

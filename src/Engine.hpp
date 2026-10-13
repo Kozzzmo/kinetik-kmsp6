@@ -881,12 +881,35 @@ private:
         }
         fx.process(global, (float)curBpm, busL[0].data(), busR[0].data(), sendDL.data(), sendDR.data(), sendRL.data(), sendRR.data(),
                    outs[0], outs[1], n);
+        masterFilter(outs[0], outs[1], n);
         const float mv = global[gVOLUME] / 127.f; const float vol = mv * mv * 1.2f;
         for (int b = 1; b < kOutBuses; ++b)
             for (uint32_t i = 0; i < n; ++i) { outs[2 * b][i] = safety(busL[b][i] * vol); outs[2 * b + 1][i] = safety(busR[b][i] * vol); }
     }
 
     static inline float safety(float x) { return MasterFx::safety(x); }
+
+    // ---- master filter: high pass + low pass (12 dB/oct state-variable) with a shared resonance, on everything
+    Svf mfHp[2], mfLp[2];
+    float mfHpHz = 20.f, mfLpHz = 20000.f;
+    void masterFilter(float* L, float* R, uint32_t n)
+    {
+        const bool hpOn = global[gMF_HP] > 0.5f, lpOn = global[gMF_LP] < 126.5f;
+        if (!hpOn && !lpOn) { mfHpHz = 20.f; mfLpHz = 20000.f; for (auto* f : {&mfHp[0], &mfHp[1], &mfLp[0], &mfLp[1]}) f->reset(); return; }
+        const float q = 0.707f + global[gMF_RESO] / 127.f * 9.f;
+        // glide the cutoffs a little per block (no zipper noise when turning the knobs)
+        mfHpHz += (cutoffHz(global[gMF_HP]) - mfHpHz) * 0.35f;
+        mfLpHz += (cutoffHz(global[gMF_LP]) - mfLpHz) * 0.35f;
+        for (int c = 0; c < 2; ++c) { mfHp[c].setup(mfHpHz, q, sr); mfLp[c].setup(mfLpHz, q, sr); }
+        float* ch[2] = {L, R};
+        for (int c = 0; c < 2; ++c)
+            for (uint32_t i = 0; i < n; ++i) {
+                float s = ch[c][i];
+                if (hpOn) { mfHp[c].tick(s); s = mfHp[c].hp; }
+                if (lpOn) { mfLp[c].tick(s); s = mfLp[c].lp; }
+                ch[c][i] = safety(s);
+            }
+    }
 };
 
 } // namespace kn

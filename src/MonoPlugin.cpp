@@ -113,13 +113,14 @@ protected:
             p.ranges.min = 0; p.ranges.max = kPatterns - 1; p.ranges.def = 0; return;
         default: break;
         }
-        static const char* section[kMasterCount] = {"Echo","Echo","Echo","Echo","Echo","Echo","Reverb","Reverb","Reverb","Reverb",
+        static const char* section[] = {"Echo","Echo","Echo","Echo","Echo","Echo","Reverb","Reverb","Reverb","Reverb",
                                           "Reverb","Reverb","Master","Master","Comp","Comp","Comp","Comp","Master","Master",
-                                          "Echo","Echo","Reverb","Reverb"};
-        static const char* syms[kMasterCount] = {"echo_time","echo_fb","echo_lpf","echo_hpf","echo_width","echo_lev",
+                                          "Echo","Echo","Reverb","Reverb","Filter","Filter","Filter"};
+        static const char* syms[] = {"echo_time","echo_fb","echo_lpf","echo_hpf","echo_width","echo_lev",
                                        "rev_decay","rev_damp","rev_gate","rev_hpf","rev_pre","rev_lev",
                                        "eq_low","eq_high","cmp_thr","cmp_ratio","cmp_atk","cmp_rel","drive","volume",
-                                       "echo_model","echo_mod","rev_model","rev_mod"};
+                                       "echo_model","echo_mod","rev_model","rev_mod","mfilter_hp","mfilter_lp","mfilter_reso"};
+        static_assert(sizeof(section) / sizeof(section[0]) == kMasterCount && sizeof(syms) / sizeof(syms[0]) == kMasterCount, "master tables");
         const int i = g - gECHO_TIME;
         if (i >= 0 && i < kMasterCount) {
             char name[48];
