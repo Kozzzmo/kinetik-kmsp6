@@ -76,7 +76,7 @@ static const char* const kMasterNames[kMasterCount] = {
     "HIGH PASS", "LOW PASS", "RESONANCE"
 };
 static const uint8_t kMasterDefaults[kMasterCount] = {
-    48, 50, 100, 10, 64, 64,
+    86, 45, 100, 10, 64, 64,      // echo: 1/8D, distinct repeats (1/8T with feedback 50 blurred into a wash)
     60, 64, 0, 20, 10, 64,
     64, 64, 127, 40, 20, 50, 0, 100,
     0, 30, 52, 30,

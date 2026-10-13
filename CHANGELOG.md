@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.7
+
+- **Echo and reverb models rebuilt so each one really sounds different**, and MOD now does something specific to
+  the model (its name changes with the model):
+  echo DIGITAL (clean, exact repeats; MOD = SPREAD), TAPE (wow, flutter, drift, saturation, hiss, darker at every
+  pass; MOD = WOW), BBD (dark and gritty, stereo chorus; MOD = CHORUS), PING-PONG (MOD = OFFSET, swung bounces),
+  LO-FI (telephone band, low sample rate, few bits; MOD = CRUSH);
+  reverb ROOM (short, strong early reflections; MOD = EARLY), PLATE (instant, dense, bright; MOD = BRIGHT),
+  HALL (long, wide, early field; MOD = MOTION), SPRING (a real "boing" tank loop; MOD = DRIP),
+  SHIMMER (long, rising an octave; MOD = SHIMMER). Each reverb model has its own decay range.
+- New instances start with a 1/8D echo and feedback 45 (1/8T with feedback 50 blurred into a wash that sounded like reverb)
+
 ## 0.4.6
 
 - The note a track is playing is shown in the top row of its button (it covered the S / M buttons)

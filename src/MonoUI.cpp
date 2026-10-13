@@ -343,6 +343,13 @@ protected:
         }
         std::snprintf(b, sizeof(b), "%d", iv); return b;
     }
+    // knob label: MOD is named after what it does in the selected echo / reverb model
+    const char* masterName(int g) const
+    {
+        if (g == gECHO_MOD) return kEchoModLabel[echoModelIndex((int)gp(gECHO_MODEL))];
+        if (g == gREV_MOD) return kReverbModLabel[reverbModelIndex((int)gp(gREV_MODEL))];
+        return kMasterNames[g - gECHO_TIME];
+    }
     std::string masterText(int g, float v) const
     {
         char b[32];
@@ -1475,7 +1482,7 @@ protected:
             const int g = masterParam(mpage, k);
             if (g < 0) { drawKnob(mKnob(k), 0, "", "", false, false, false); continue; }
             const float v = gp(g);
-            drawKnob(mKnob(k), v / 127.f, kMasterNames[g - gECHO_TIME], masterText(g, v), false,
+            drawKnob(mKnob(k), v / 127.f, masterName(g), masterText(g, v), false,
                      drag == dkMasterKnob && dragIndex == k, true);
         }
         const R in{716, 394, 448, 88};

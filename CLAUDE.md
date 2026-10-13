@@ -9,7 +9,7 @@ synthesis is original code. Sister product: **Kinetik KDSP-16** (drums), reposit
 | File | Role |
 |---|---|
 | `Params.hpp` | 6 tracks, 128 steps, 16 patterns; 56 lockable params per track: 0–7 machine, AMP 8–15, FILTER 16–23 (CUTOFF RESO TYPE LOW CUT ENV ATK ENV DEC ENV AMT KEY TRK), FX 24–31, LFO1/2/3 at 32/38/44 (RATE DEPTH WAVE MODE DEST TARGET; DEST index 32 = PITCH) + SYNC/PHASE at 50+2l (`lfoParam(l,k)`); machines SAW PULSE SUPER FM WAVE VOX PLUCK NOISE CHORD (`kChordShapeDefs`, 3-8 voices, paraphonic); kit fields OUT MIDI TRNSP(=PITCH) LEGATO KEYTRK(unused, old banks) ARP mode/oct/speed/chord SCALE ROOT; scales `kScaleDefs`; master params incl. ECHO/REVERB MODEL + MOD |
-| `MasterFx.hpp` | master echo (5 models) / reverb (5 models) / EQ / compressor / limiter — **identical in kinetik-kdsp16** |
+| `MasterFx.hpp` | master echo (5 models) / reverb (5 models, own decay ranges, ROOM/HALL early reflections, SPRING tank loop) / EQ / compressor / limiter; MOD is model-specific (`kEchoModLabel` / `kReverbModLabel`, UI `masterName()`) — **identical in kinetik-kdsp16** |
 | `Bank.hpp` | like KDSP-16 plus per-step `note` (60 = C3, Ableton naming), `gate` (index into `kGateSteps`) and `chord` (index into `kChords`, played by LINK); `Bank::glob` = global scale + LINK settings; header `KMSP2`; extra commands `n` `g` `h` (chord), `G scale root`, `LK first voices mode copy detune` |
 | `Wavetable.hpp` | 32 band-limited wave frames × 11 mip levels, generated at start-up by FFT |
 | `Voice.hpp` | `MonoVoice`: the 8 machines (VOX and NOISE have a slow AGC so resonance does not change loudness) |
