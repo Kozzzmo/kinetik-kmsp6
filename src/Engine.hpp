@@ -295,6 +295,15 @@ public:
         const int V = linkVoices();
         return (V >= 2 && t >= bank.glob.linkFirst && t < bank.glob.linkFirst + V) ? bank.glob.linkFirst : -1;
     }
+    // muted, or not soloed while others are (LINK voices follow their first track's solo)
+    bool silenced(int t) const
+    {
+        if (bank.mute[t]) return true;
+        bool any = false;
+        for (int i = 0; i < kTracks; ++i) any |= bank.solo[i] != 0;
+        const int m = linkMaster(t);
+        return any && !bank.solo[t] && !(m >= 0 && bank.solo[m]);
+    }
     int soundSource(int t) const { const int m = linkMaster(t); return (m >= 0 && bank.glob.linkCopy) ? m : t; }
     int machineOf(int t) const { return bank.machine[soundSource(t)]; }
     int noteSource(int t) const { const int m = linkMaster(t); return m >= 0 ? m : t; }   // whose pitch / scale settings apply
@@ -375,7 +384,7 @@ private:
             tr.decK = e.k;
             tr.decOk = evalCond(tr, P.cond[t][s], e.k, P.trackLen[t]);
         } else if (tr.decK != e.k) return;
-        if (!tr.decOk || bank.mute[t]) return;
+        if (!tr.decOk || silenced(t)) return;
         const float acc = 1.f + P.accent / 127.f * 0.6f;
         const int n = std::max<int>(1, P.ratch[t][s]);
         const double stepLen = stepSamples();
@@ -758,7 +767,7 @@ private:
         tr.srrN = e[tpSRR] > 0.5f ? (int)expmap(e[tpSRR] / 127.f, 1.f, 64.f) : 1;
         tr.dist = e[tpDIST] / 127.f;
         const float v = e[tpVOL] / 127.f;
-        tr.vol = bank.mute[t] ? 0.f : v * v * 0.9f;
+        tr.vol = silenced(t) ? 0.f : v * v * 0.9f;
         const float pan = e[tpPAN] / 127.f;
         tr.panL = std::cos(pan * kPi * 0.5f); tr.panR = std::sin(pan * kPi * 0.5f);
         tr.del = e[tpDEL] / 127.f * 1.4f; tr.rev = e[tpREV] / 127.f * 1.4f;   // sends go above unity

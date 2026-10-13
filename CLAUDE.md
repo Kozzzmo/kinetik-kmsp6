@@ -70,6 +70,11 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
   `skin` = "<skin index> <zoom %>" (also saved to a per-user file for new instances).
 - DSP side: the master Bank is guarded by a mutex; `run()` only `try_lock`s and copies dirty patterns
   (bitmask, `kKitBit` for kit changes). Never block or allocate in `run()`.
+- UI parameter edits are sent twice: host parameter + `pv <index> <value>` line in the cmd state (`setParam` queues,
+  `flushPv` in `uiIdle`). The plugin applies `pv` itself and, for 1.5 s, ignores host values that disagree
+  (`uiEdit` / `uiHold`): hosts sent stale values and lost parts of bulk edits (randomize needed two presses).
+- Solo: `Bank::solo` (command `S t 0/1`, serialized only when on), `trackSilenced()`; the plugin copies `solo`
+  with `mute` on kit changes.
 - Output parameters: `out_step` (absolute step counter modulo 2^20), `out_leds`, `out_pattern`.
 - `paramSymbol()` tables have a `static_assert` on their size — a too-short table crashed Windows hosts once.
 - Engine: per-block event list (sorted by frame then kind), swing, micro-timing, ratchets, conditions

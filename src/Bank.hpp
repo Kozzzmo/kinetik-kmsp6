@@ -72,6 +72,7 @@ struct Bank {
     // kit settings (not host parameters, so hosts can never send stale values for them)
     uint8_t machine[kTracks];
     uint8_t mute[kTracks];
+    uint8_t solo[kTracks];   // any solo on: only the solo tracks play
     uint8_t kit[kTracks][kKitFields]; // output, MIDI channel, transpose, legato, key tracking, arpeggiator
     // settings for the whole instrument
     struct Global {
@@ -85,7 +86,7 @@ struct Bank {
     {
         glob = Global();
         for (int t = 0; t < kTracks; ++t) {
-            machine[t] = kDefaultKit[t]; mute[t] = 0;
+            machine[t] = kDefaultKit[t]; mute[t] = 0; solo[t] = 0;
             for (int f = 0; f < kKitFields; ++f) kit[t][f] = kKitDefault[f];
         }
     }
@@ -175,6 +176,7 @@ inline std::string serializeBank(const Bank& b)
     for (int t = 0; t < kTracks; ++t) {
         std::snprintf(buf, sizeof(buf), "M %d %d\nU %d %d\n", t, b.machine[t], t, b.mute[t]);
         s += buf;
+        if (b.solo[t]) { std::snprintf(buf, sizeof(buf), "S %d 1\n", t); s += buf; }
         for (int f = 0; f < kKitFields; ++f)
             if (b.kit[t][f] != kKitDefault[f]) { std::snprintf(buf, sizeof(buf), "K %d %d %d\n", t, f, b.kit[t][f]); s += buf; }
     }
@@ -237,6 +239,11 @@ inline int applyCommand(Bank& b, const char* line)
     if (!std::strcmp(op, "M")) { // M track machine
         if (std::sscanf(rest, "%d %d", &a, &c) != 2 || !validT(a)) return -1;
         b.machine[a] = (uint8_t)clampi(c, 0, kMachines - 1);
+        return kKitTouched;
+    }
+    if (!std::strcmp(op, "S")) { // S track solo(0/1)
+        if (std::sscanf(rest, "%d %d", &a, &c) != 2 || !validT(a)) return -1;
+        b.solo[a] = c ? 1 : 0;
         return kKitTouched;
     }
     if (!std::strcmp(op, "U")) { // U track mute(0/1)
@@ -319,6 +326,15 @@ inline int applyCommand(Bank& b, const char* line)
 }
 
 // Parse a full bank. Returns false if the text isn't a bank.
+// mute, or another track is soloed
+inline bool trackSilenced(const Bank& b, int t)
+{
+    if (b.mute[t]) return true;
+    bool any = false;
+    for (int i = 0; i < kTracks; ++i) any |= b.solo[i] != 0;
+    return any && !b.solo[t];
+}
+
 inline bool deserializeBank(Bank& b, const char* text)
 {
     if (!text || (std::strncmp(text, "KMSP1", 5) != 0 && std::strncmp(text, "KMSP2", 5) != 0)) return false;

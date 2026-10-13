@@ -181,6 +181,17 @@ protected:
     {
         values[idx] = v;
         setParameterValue(idx, v);
+        // also sent through the cmd state (flushed in uiIdle): the DSP applies it even if the host loses or
+        // reverts the parameter change (see uiEdit in the plugin)
+        char b[40]; std::snprintf(b, sizeof(b), "pv %u %.4f\n", (unsigned)idx, v); pvQueue += b;
+    }
+    std::string pvQueue;
+    void flushPv()
+    {
+        if (pvQueue.empty()) return;
+        pvQueue.pop_back();
+        setState("cmd", pvQueue.c_str());
+        pvQueue.clear();
     }
     void setParamGesture(uint32_t idx, float v)
     {
@@ -351,6 +362,7 @@ protected:
     // ------------------------------------------------------------------ layout
     R trackBtn(int t) const { return {20.f + t * 190.f, 66.f, 184.f, 64.f}; }
     R muteBtn(int t) const { R r = trackBtn(t); return {r.x + r.w - 30.f, r.y + r.h - 28.f, 30.f, 28.f}; }
+    R soloBtn(int t) const { const R m = muteBtn(t); return {m.x - 28.f, m.y, 28.f, m.h}; }
     R lcd() const { return {20.f, 146.f, 680.f, 150.f}; }
     R machPrev() const { return {150.f, 156.f, 26.f, 26.f}; }
     R machName() const { return {178.f, 156.f, 130.f, 26.f}; }
@@ -773,7 +785,15 @@ protected:
             const R m{mh.x + 6, mh.y + 9, mh.w - 12, mh.h - 14};
             if (muted) box(m, th->lock, 2.f); else frame(m, Color(fg, Color(0, 0, 0, 0.f), 0.6f), 2.f);
             label(m.cx(), m.cy() + 1, "M", 9.f, muted ? th->selText : fg, ALIGN_CENTER | ALIGN_MIDDLE, fnMono);
+            {   // solo
+                const bool solo = bank->solo[t] != 0;
+                const R sh = soloBtn(t);
+                const R so{sh.x + (m.x - mh.x), m.y, m.w, m.h};
+                if (solo) box(so, th->accent, 2.f); else frame(so, Color(fg, Color(0, 0, 0, 0.f), 0.6f), 2.f);
+                label(so.cx(), so.cy() + 1, "S", 9.f, solo ? th->selText : fg, ALIGN_CENTER | ALIGN_MIDDLE, fnMono);
+            }
             if (muted) { beginPath(); rect(r.x + 4, r.y + r.h - 4, r.w - 8, 2); fillColor(th->lock); fill(); }
+            else if (trackSilenced(*bank, t)) { beginPath(); rect(r.x + 4, r.y + r.h - 4, r.w - 8, 2); fillColor(th->faint); fill(); }   // silent: another track is soloed
         }
     }
 
@@ -2541,6 +2561,10 @@ protected:
         }
 
         for (int t = 0; t < kTracks; ++t) {
+            if (soloBtn(t).in(x, y)) {
+                char b[32]; std::snprintf(b, sizeof(b), "S %d %d", t, bank->solo[t] ? 0 : 1); sendCmd(b);
+                repaint(); return true;
+            }
             if (muteBtn(t).in(x, y)) {
                 char b[32]; std::snprintf(b, sizeof(b), "U %d %d", t, bank->mute[t] ? 0 : 1); sendCmd(b);
                 repaint(); return true;
@@ -2977,6 +3001,7 @@ protected:
 
     void uiIdle() override
     {
+        flushPv();
         if (updater && (int)updater->getState() != updLastState) { updLastState = (int)updater->getState(); repaint(); }
         viewIdle();
         pollRecorded();

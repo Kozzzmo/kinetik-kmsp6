@@ -72,7 +72,7 @@ static const Theme kThemes[] = {
      Color(9, 11, 26), Color(14, 18, 40), Color(42, 50, 100), Color(8, 10, 24),
      Color(200, 208, 255), Color(118, 128, 180), Color(60, 68, 120),
      Color(170, 182, 255), Color(9, 11, 26),
-     Color(255, 120, 210),
+     Color(255, 70, 85),
      Color(170, 182, 255), Color(9, 11, 26),
      Color(14, 18, 40), Color(52, 62, 120), Color(200, 208, 255),
      Color(6, 8, 20), Color(206, 214, 255), Color(118, 128, 180), Color(170, 182, 255), Color(9, 11, 26),
@@ -80,7 +80,7 @@ static const Theme kThemes[] = {
      Color(16, 20, 44), Color(19, 24, 52), Color(12, 15, 32), Color(22, 27, 58), Color(200, 208, 255),
      Color(70, 80, 140),
      Color(2, 3, 10, 0.72f),
-     Color(255, 160, 225),
+     Color(255, 140, 150),
      6.f, 1.f, fnSerif, fnMono, fnMono, 0.7f, ksTicks, lgNeon, false, true, true},
     // ---- CLASSIC: the original graphite look ----
     {"CLASSIC",
