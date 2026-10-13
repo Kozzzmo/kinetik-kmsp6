@@ -108,6 +108,10 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
   Ed25519 seed) exists, otherwise it only warns. The private key stays with the owner, never in a repository.
 - `KN_VERSION` comes from `VERSION` (Makefile). Test: `tests/update.cpp` (links the two monocypher .c files).
 - Copies older than KDSP-16 0.9 / KMSP-6 0.4 have no update check.
+- The plug-in version (`getVersion`, bundle Info.plist) comes from `VERSION` via `KN_VER_MAJOR/MINOR/MICRO`
+  (Makefile) — it was hard-coded once and macOS Installer then skipped the "unchanged" bundles. `make-pkg.sh` also
+  sets `BundleIsVersionChecked false`; the NSIS installer refuses to continue while the plug-in file is locked.
+  `upd::strayCopy` warns about old copies in the per-user plug-in folders.
 
 ## Packaging and signing
 

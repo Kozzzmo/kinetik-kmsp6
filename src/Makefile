@@ -7,7 +7,10 @@ DPF_PATH ?= ../dpf
 DPF_TARGET_DIR = ../bin
 DPF_BUILD_DIR = ../build
 include $(DPF_PATH)/Makefile.plugins.mk
-BUILD_CXX_FLAGS += -std=gnu++17 -DKN_VERSION='"$(shell cat ../VERSION)"' -DKN_VERSION='"$(shell cat ../VERSION)"'
+BUILD_CXX_FLAGS += -std=gnu++17 -DKN_VERSION='"$(shell cat ../VERSION)"'
+# plug-in version (hosts, bundle Info.plist, installers) = the VERSION file
+KN_VPARTS := $(subst ., ,$(shell cat ../VERSION))
+BUILD_CXX_FLAGS += -DKN_VER_MAJOR=$(or $(word 1,$(KN_VPARTS)),0) -DKN_VER_MINOR=$(or $(word 2,$(KN_VPARTS)),0) -DKN_VER_MICRO=$(or $(word 3,$(KN_VPARTS)),0) -DKN_VERSION='"$(shell cat ../VERSION)"'
 ifeq ($(WINDOWS),true)
 LINK_FLAGS += -lshell32
 endif

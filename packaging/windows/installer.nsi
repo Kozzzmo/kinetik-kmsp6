@@ -43,6 +43,15 @@ FunctionEnd
 
 Section "Install"
   SetRegView 64
+  ; an open music program keeps the old plug-in locked: ask to close it instead of leaving the old version in place
+  in_use:
+  ClearErrors
+  Delete "$COMMONFILES64\VST3\${BIN}.vst3\Contents\x86_64-win\${BIN}.vst3"
+  Delete "$COMMONFILES64\CLAP\${BIN}.clap"
+  IfErrors 0 not_in_use
+  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "${PRODUCT} is in use. Close your music software, then click Retry." /SD IDCANCEL IDRETRY in_use
+  Abort "${PRODUCT} is in use: close your music software and run the installer again."
+  not_in_use:
   SetOutPath "$COMMONFILES64\VST3\${BIN}.vst3"
   File /r "bin\${BIN}.vst3\*.*"
   CreateDirectory "$COMMONFILES64\CLAP"

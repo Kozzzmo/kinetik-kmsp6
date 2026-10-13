@@ -126,6 +126,9 @@ inline std::string sha512Hex(const std::string& data)
 // ---- system side (Updater.cpp)
 bool download(const std::string& url, const std::string& path, int timeoutSec);
 bool openPage(const std::string& url);
+// an older copy of this plug-in in the per-user plug-in folder, which hosts may load instead of the installed one
+// ("" if none). bin = file name without extension, e.g. "KinetikKMSP6".
+std::string strayCopy(const char* bin);
 
 // ---- the checker: owned by the UI, all network / file work on its own thread
 class Checker {

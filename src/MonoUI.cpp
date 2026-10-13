@@ -2816,6 +2816,15 @@ protected:
         case C::stFailed: l1 = updater->message(); l2 = "Check your internet connection and try again."; break;
         default: l1 = "Click CHECK NOW to look for a new version."; break;
         }
+        // an old copy in the per-user plug-in folder would be loaded instead of the installed one
+        if (st == C::stOpened || st == C::stUpToDate || st == C::stIdle) {
+            const std::string stray = upd::strayCopy("KinetikKMSP6");
+            if (!stray.empty()) {
+                l2 = "An older copy is also installed here: " + stray + " - delete it (your music software may load it "
+                     "instead of the new version).";
+                if (st != C::stOpened) l3.clear();
+            }
+        }
         label(320, bx.y + 86, l1.c_str(), 13.f, th->text, ALIGN_LEFT | ALIGN_MIDDLE);
         if (!l2.empty()) {
             fontFace(NANOVG_DEJAVU_SANS_TTF); fontSize(12.5f); fillColor(th->dim); textAlign(ALIGN_LEFT | ALIGN_TOP);

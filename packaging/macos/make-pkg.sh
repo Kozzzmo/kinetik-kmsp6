@@ -11,12 +11,16 @@ cp -R "bin/$BIN.vst3" "$ROOT/VST3/"
 cp -R "bin/$BIN.component" "$ROOT/Components/"
 cp "bin/$BIN.clap" "$ROOT/CLAP/" 2>/dev/null || cp -R "bin/$BIN.clap" "$ROOT/CLAP/"
 cp EULA.txt "$WORK/res/EULA.txt"
-# never let the installer "relocate" a bundle to another copy found on the disk
+# never let the installer "relocate" a bundle to another copy found on the disk, and always replace the installed
+# bundles (version check off: an update must overwrite even if the bundle version looks the same)
 pkgbuild --analyze --root "$WORK/root" "$WORK/components.plist"
 n=$(/usr/libexec/PlistBuddy -c "Print" "$WORK/components.plist" | grep -c "BundleIsRelocatable" || true)
 i=0
 while [ "$i" -lt "$n" ]; do
   /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" "$WORK/components.plist"
+  /usr/libexec/PlistBuddy -c "Set :$i:BundleIsVersionChecked false" "$WORK/components.plist"
+  /usr/libexec/PlistBuddy -c "Set :$i:BundleOverwriteAction upgrade" "$WORK/components.plist" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Add :$i:BundleOverwriteAction string upgrade" "$WORK/components.plist"
   i=$((i + 1))
 done
 pkgbuild --root "$WORK/root" --component-plist "$WORK/components.plist" --identifier "$ID" --version "$VER" --install-location / "$WORK/plugins.pkg"

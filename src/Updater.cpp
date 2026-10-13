@@ -50,6 +50,35 @@ std::wstring widen(const std::string& s)
 }
 #endif
 
+static bool exists(const std::string& p)
+{
+#ifdef _WIN32
+    return GetFileAttributesW(widen(p).c_str()) != INVALID_FILE_ATTRIBUTES;
+#else
+    return access(p.c_str(), F_OK) == 0;
+#endif
+}
+
+std::string strayCopy(const char* bin)
+{
+#if defined(__APPLE__)
+    const char* home = std::getenv("HOME");
+    if (!home) return "";
+    const std::string base = std::string(home) + "/Library/Audio/Plug-Ins/";
+    const std::string c[3] = {base + "VST3/" + bin + ".vst3", base + "Components/" + bin + ".component", base + "CLAP/" + bin + ".clap"};
+#elif defined(_WIN32)
+    const char* la = std::getenv("LOCALAPPDATA");
+    if (!la) return "";
+    const std::string c[3] = {std::string(la) + "\\Programs\\Common\\VST3\\" + bin + ".vst3",
+                              std::string(la) + "\\Programs\\Common\\CLAP\\" + bin + ".clap", ""};
+#else
+    (void)bin;
+    const std::string c[3];
+#endif
+    for (const auto& p : c) if (!p.empty() && exists(p)) return p;
+    return "";
+}
+
 // download url to path with curl (follows redirects, https only, fails on HTTP errors). true on success.
 bool download(const std::string& url, const std::string& path, int timeoutSec)
 {

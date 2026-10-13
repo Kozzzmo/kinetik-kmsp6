@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.2
+
+- **Updates really replace the plug-in**: the installers now always overwrite the installed files (on macOS an update
+  could leave the old version in place), and the plug-in reports its real version to hosts
+- The Windows installer asks you to close your music software when the plug-in is in use
+- The update window warns when an older copy sits in your personal plug-in folder (hosts may load it instead)
+
 ## 0.4.1
 
 - **RANDOMIZE ALL SOUNDS**: new sounds on every track at once, machines kept, sequencer untouched (UNDO restores)
