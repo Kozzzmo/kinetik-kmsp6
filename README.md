@@ -28,6 +28,12 @@ plugin runs in demo mode (3 s of silence every 45 s); click "DEMO - CLICK TO REG
    ```
 3. Rescan plugins in your DAW (Ableton Live: Settings → Plug-Ins → Rescan).
 
+### Updates
+
+From this version on, the plug-in checks once a day whether a new version is out (nothing about you or your computer
+is sent; it can be turned off). When one is available, the line under the logo says so: click the logo, then
+DOWNLOAD & INSTALL. The installer is checked against a signed manifest before it opens; close your DAW to finish.
+
 ## Build it yourself on a Mac
 
 Requirements: Xcode command line tools (`xcode-select --install`), git, python3.

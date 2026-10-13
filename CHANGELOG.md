@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4
+
+- **Update check**: the plug-in tells you when a new version is out (at most once a day, nothing is sent). Click the
+  logo: DOWNLOAD & INSTALL fetches the installer, checks its signature and opens it (close your DAW to finish).
+  Automatic check can be turned off in the same window.
+
 ## 0.3
 
 - **LINK** (MASTER section, LINK tab): 2 to 6 tracks become the voices of one polyphonic instrument, played from

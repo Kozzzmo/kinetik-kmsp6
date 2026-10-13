@@ -13,6 +13,8 @@ on:
 #           MACOS_SIGN_INSTALLER ("Developer ID Installer: Name (TEAMID)"),
 #           APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD (app-specific password, for notarization)
 #   Windows: WINDOWS_CERTIFICATE (base64 .pfx), WINDOWS_CERTIFICATE_PASSWORD
+#   Updates: KINETIK_UPDATE_KEY (hex Ed25519 seed): signs dist/update.txt, which installed plugins read to offer
+#            the new version. Without it no manifest is published and installed copies see no update.
 
 jobs:
   macos:
@@ -162,6 +164,7 @@ jobs:
           gcc -O2 -c src/third_party/monocypher/monocypher.c -o /tmp/m1.o
           gcc -O2 -c src/third_party/monocypher/monocypher-ed25519.c -o /tmp/m2.o
           g++ -O2 -std=c++17 -Isrc tests/license.cpp /tmp/m1.o /tmp/m2.o -o /tmp/license-test && /tmp/license-test
+          g++ -O2 -std=c++17 -Isrc tests/update.cpp /tmp/m1.o /tmp/m2.o -o /tmp/update-test && /tmp/update-test
           g++ -O2 -std=c++17 tests/presets.cpp -o /tmp/presets-test && mkdir -p out && /tmp/presets-test > /dev/null
           g++ -O2 -std=c++17 tests/features.cpp -o /tmp/features-test && /tmp/features-test
       - name: Package
@@ -189,6 +192,16 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Signed update manifest
+        env:
+          KINETIK_UPDATE_KEY: ${{ secrets.KINETIK_UPDATE_KEY }}
+        run: |
+          if [ -z "$KINETIK_UPDATE_KEY" ]; then echo "::warning title=updates::KINETIK_UPDATE_KEY not set, no update.txt published"; exit 0; fi
+          pip install --quiet cryptography
+          python3 tools/sign_update.py --product KMSP-6 --version ${{ steps.ver.outputs.v }} --repo kinetik-kmsp6 \
+            --mac dist/Kinetik-KMSP6-macOS.pkg --win dist/Kinetik-KMSP6-Windows-Setup.exe \
+            --changelog CHANGELOG.md --out dist/update.txt
+          cat dist/update.txt
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
@@ -200,8 +213,9 @@ jobs:
             dist/*.zip
             dist/*.pkg
             dist/*.exe
+            dist/update.txt
           generate_release_notes: false
           body: |
             Installers: Kinetik-KMSP6-macOS.pkg (macOS universal, VST3 + AU + CLAP) and Kinetik-KMSP6-Windows-Setup.exe (Windows 64-bit, VST3 + CLAP).
             The zips contain the same plugins for manual installation (and the Linux build).
-            Without a licence file the plugin runs in demo mode.
+            Installed copies (0.9 and later for KDSP-16, 0.4 and later for KMSP-6) offer new versions themselves: click the logo.

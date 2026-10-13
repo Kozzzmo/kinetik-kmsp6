@@ -96,6 +96,19 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
   repository. Never commit it, never ask for it to be pasted into a conversation that is shared.
 - `tests/license.cpp` uses fixtures signed with a fixed test key that the plugins never trust.
 
+## Updates (`src/Updater.hpp/.cpp`, identical in kinetik-kdsp16 and kinetik-kmsp6)
+
+- The UI owns an `upd::Checker`: at most every 20 h (setting `auto` in `<user data>/Kinetik/updates.txt`, also
+  `last-<product>` and `skip-<product>`) a thread downloads `releases/latest/download/update.txt` with the
+  system curl (macOS `/usr/bin/curl`, Windows `System32\curl.exe`). Manifest `KINETIK-UPDATE 1`: product, version,
+  notes, page, mac / mac-sha512, win / win-sha512, then an Ed25519 `signature` by the **update key** (not the licence
+  key). Installer URLs must start with `https://github.com/Kozzzmo/`; the installer is opened only if its SHA-512
+  matches. Logo subtitle "UPDATE x AVAILABLE - CLICK"; logo click = update window (`ovUpdate`).
+- The release job signs `dist/update.txt` with `tools/sign_update.py` when the secret `KINETIK_UPDATE_KEY` (hex
+  Ed25519 seed) exists, otherwise it only warns. The private key stays with the owner, never in a repository.
+- `KN_VERSION` comes from `VERSION` (Makefile). Test: `tests/update.cpp` (links the two monocypher .c files).
+- Copies older than KDSP-16 0.9 / KMSP-6 0.4 have no update check.
+
 ## Packaging and signing
 
 - Installers are built in CI: `packaging/macos/make-pkg.sh` (productbuild .pkg into /Library/Audio/Plug-Ins,
