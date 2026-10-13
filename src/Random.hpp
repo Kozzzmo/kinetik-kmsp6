@@ -35,7 +35,8 @@ inline int trackRole(int t, int m)
     return t == 0 ? 0 : 1;
 }
 
-// ---- sound of one track (machine kept) ----
+// ---- sound of one track (machine kept). LEVEL, PAN and the DELAY / REVERB sends are left as they are:
+// randomizing a sound must not change the mix.
 inline void randomizeSound(float* values, int t, int m, RandGen& r)
 {
     const int role = trackRole(t, m);
@@ -57,8 +58,6 @@ inline void randomizeSound(float* values, int t, int m, RandGen& r)
         tparam(values, t, tpREL) = (float)r.range(15, 60);
     }
     tparam(values, t, tpHOLD) = 0.f;
-    tparam(values, t, tpVOL) = (float)r.range(85, 110);
-    tparam(values, t, tpPAN) = (float)clampi(64 + (role == 0 ? 0 : r.range(-35, 35)), 0, 127);
     tparam(values, t, tpPORT) = r.chance(0.4f) ? (float)r.range(10, 50) : 0.f;
     // filter
     tparam(values, t, tpCUTOFF) = (float)r.range(role == 0 ? 35 : 50, 115);
@@ -76,8 +75,6 @@ inline void randomizeSound(float* values, int t, int m, RandGen& r)
     tparam(values, t, tpEQG) = (float)clampi(64 + r.range(-12, 12), 0, 127);
     tparam(values, t, tpSRR) = r.chance(0.1f) ? (float)r.range(10, 60) : 0.f;
     tparam(values, t, tpDIST) = r.chance(0.3f) ? (float)r.range(5, 50) : 0.f;
-    tparam(values, t, tpDEL) = r.chance(role == 0 ? 0.1f : 0.4f) ? (float)r.range(10, 70) : 0.f;
-    tparam(values, t, tpREV) = r.chance(role == 0 ? 0.1f : 0.5f) ? (float)r.range(10, 80) : 0.f;
     // LFOs: LFO 1 sometimes on the filter, LFO 2 sometimes vibrato, LFO 3 rarely anything
     for (int l = 0; l < 3; ++l) {
         const int b = kLfoBase[l];

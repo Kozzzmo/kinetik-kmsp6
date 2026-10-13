@@ -349,7 +349,7 @@ protected:
     R patPaste() const { return {1018.f, 400.f, 68.f, 24.f}; }
     R patClear() const { return {1090.f, 400.f, 68.f, 24.f}; }
     R modeBtn(int i) const { return {20.f + i * 55.f, 504.f, 52.f, 26.f}; }
-    R stepPage(int i) const { return {464.f + i * 50.f, 504.f, 47.f, 26.f}; }
+    R stepPage(int i) const { return {464.f + i * 25.f, 504.f, 23.f, 26.f}; }   // 8 pages of 16 steps
     R lenMinus() const { return {666.f, 504.f, 22.f, 26.f}; }
     R lenBox() const { return {690.f, 504.f, 56.f, 26.f}; }
     R lenPlus() const { return {748.f, 504.f, 22.f, 26.f}; }
@@ -1288,7 +1288,9 @@ protected:
         label(378, 169, kPageNames[page], 11.5f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE);
 
         if (lockStep >= 0) {
-            std::snprintf(b, sizeof(b), "LOCK STEP %02d", lockStep + 1);
+            const int nsel = selCount();
+            if (nsel > 1) std::snprintf(b, sizeof(b), "LOCK %d STEPS", nsel);
+            else std::snprintf(b, sizeof(b), "LOCK STEP %02d", lockStep + 1);
             label(586, 169, b, 11.5f, th->lock, ALIGN_RIGHT | ALIGN_MIDDLE);
             frame(lockClear(), th->lock); label(lockClear().cx(), lockClear().cy() + 1, "CLEAR", 10.f, th->lock);
         } else if (rec) {
@@ -1369,8 +1371,8 @@ protected:
         const bool samePat = (int)std::lround(gp(gOUT_PATTERN)) == editPattern();
         const bool running = absStep() >= 0;
         const int step = running && samePat ? trackStepNow(selTrack) : -1;
-        for (int i = 0; i < 4; ++i) {
-            char b[16]; std::snprintf(b, sizeof(b), "%d-%d", i * 16 + 1, i * 16 + 16);
+        for (int i = 0; i < kSteps / 16; ++i) {
+            char b[16]; std::snprintf(b, sizeof(b), "%d", i + 1);
             const R r = stepPage(i);
             if (i < pages) {
                 button(r, b, stepPg == i, 10.f);
@@ -1394,7 +1396,7 @@ protected:
             Color bg = inLen ? ((i / 4) % 2 ? th->stepAlt : th->stepFill) : th->stepOff;
             box(r, bg);
             if (playing) frame(r, th->logo == lgRiso ? th->text : th->selFill, -1.f, 2.5f);
-            else if (s == lockStep) frame(r, th->lock, -1.f, 2.5f);
+            else if (isSel(s)) frame(r, th->lock, -1.f, s == lockStep ? 3.f : 2.f);
             else if (s == noteStep && mode == mdNote) frame(r, th->lock, -1.f, 2.f);
             else frame(r, Color(th->btnEdge, bg, 0.5f));
             // slide into this step: a bridge from the previous step
@@ -1742,7 +1744,7 @@ protected:
         }
         applyState(nv.data(), nb.get());
         if (withPatterns) { setParamGesture(kGlobalBase + gPATTERN, (float)clampi(patIdx, 0, kPatterns - 1)); stepPg = 0; }
-        lockStep = -1; noteStep = -1;
+        clearSel(); noteStep = -1;
         presetName = name;
     }
 
@@ -1898,7 +1900,7 @@ protected:
             for (int p = 0; p < kPatterns; ++p) nb->patterns[p] = bank->patterns[p];
         applyState(nv.data(), nb.get());
         if (withPatterns) { setParamGesture(kGlobalBase + gPATTERN, 0.f); stepPg = 0; }
-        lockStep = -1; noteStep = -1;
+        clearSel(); noteStep = -1;
         presetName = kPresets[i].name;
     }
 
@@ -1952,7 +1954,7 @@ protected:
             randomizePattern(nb->patterns[editPattern()], *nb, r);
             applyState(nv.data(), nb.get());
         }
-        if (what >= 2) { lockStep = -1; noteStep = -1; }
+        if (what >= 2) { clearSel(); noteStep = -1; }
         presetName = what == 3 ? "(random)" : presetName;
         repaint();
     }
@@ -2005,44 +2007,55 @@ protected:
         std::snprintf(b, sizeof(b), "f %d %d %d %d\nn %d %d %d %d\n", editPattern(), selTrack, s, sfTrig, editPattern(), selTrack, s, lastNote);
         c += b;
     }
+    // note / length of a step; when the step is part of the selection, every selected step moves by the same amount
     void setStepNote(int s, int n)
     {
         std::string c;
-        ensureTrig(c, s);
-        char b[48]; std::snprintf(b, sizeof(b), "n %d %d %d %d", editPattern(), selTrack, s, clampi(n, 0, 127));
-        c += b; sendLines(c);
+        const int delta = n - pat().note[selTrack][s];
+        char b[48];
+        for (int st : editTargets(s)) {
+            const int base = (pat().flags[selTrack][st] & sfTrig) ? pat().note[selTrack][st] : lastNote;
+            ensureTrig(c, st);
+            std::snprintf(b, sizeof(b), "n %d %d %d %d\n", editPattern(), selTrack, st, clampi(st == s ? n : base + delta, 0, 127)); c += b;
+        }
+        c.pop_back(); sendLines(c);
     }
     void setStepGate(int s, int g)
     {
         std::string c;
-        ensureTrig(c, s);
-        char b[48]; std::snprintf(b, sizeof(b), "g %d %d %d %d", editPattern(), selTrack, s, clampi(g, 0, kGateCount - 1));
-        c += b; sendLines(c);
+        const int delta = g - pat().gate[selTrack][s];
+        char b[48];
+        for (int st : editTargets(s)) {
+            ensureTrig(c, st);
+            std::snprintf(b, sizeof(b), "g %d %d %d %d\n", editPattern(), selTrack, st, clampi(st == s ? g : pat().gate[selTrack][st] + delta, 0, kGateCount - 1)); c += b;
+        }
+        c.pop_back(); sendLines(c);
     }
 
     // RATCH / COND / TIME modes: left click = next value, right click = previous, double-click = reset
     void stepExtra(int s, bool right, bool dbl, bool shift)
     {
+        // the value is computed from the clicked step, then written to every selected step
         Pattern& p = pat();
         const int pi = editPattern();
+        const std::vector<int> targets = editTargets(s);
         std::string c;
         char b[64];
-        ensureTrig(c, s);
+        for (int st : targets) ensureTrig(c, st);
+        char op = 'm'; int v = 0;
         if (mode == mdRatch) {
             int idx = 0;
             for (int i = 0; i < kRatchCount; ++i) if (kRatchValues[i] == std::max<int>(1, p.ratch[selTrack][s])) idx = i;
             idx = dbl ? 0 : (idx + (right ? kRatchCount - 1 : 1)) % kRatchCount;
-            std::snprintf(b, sizeof(b), "r %d %d %d %d", pi, selTrack, s, kRatchValues[idx]);
+            op = 'r'; v = kRatchValues[idx];
         } else if (mode == mdCond) {
-            const int v = dbl ? 0 : (p.cond[selTrack][s] + (right ? kNumConds - 1 : 1)) % kNumConds;
-            std::snprintf(b, sizeof(b), "c %d %d %d %d", pi, selTrack, s, v);
+            op = 'c'; v = dbl ? 0 : (p.cond[selTrack][s] + (right ? kNumConds - 1 : 1)) % kNumConds;
         } else {
             const int st = shift ? 4 : 1;
-            const int v = dbl ? 0 : clampi(p.micro[selTrack][s] + (right ? -st : st), -kMicroMax, kMicroMax);
-            std::snprintf(b, sizeof(b), "m %d %d %d %d", pi, selTrack, s, v);
+            v = dbl ? 0 : clampi(p.micro[selTrack][s] + (right ? -st : st), -kMicroMax, kMicroMax);
         }
-        c += b;
-        sendLines(c);
+        for (int st : targets) { std::snprintf(b, sizeof(b), "%c %d %d %d %d\n", op, pi, selTrack, st, v); c += b; }
+        if (!c.empty()) { c.pop_back(); sendLines(c); }
     }
 
     void drawPatternSettings()
@@ -2082,7 +2095,7 @@ protected:
             cmds += b;
         }
         sendLines(cmds);
-        if (lockStep >= newLen) lockStep = -1;
+        dropSelFrom(newLen);
         if (noteStep >= newLen) noteStep = -1;
     }
 
@@ -2132,15 +2145,44 @@ protected:
         repaint();
     }
 
+    // ---- multi-step selection: each right-click adds a step (or removes it); the knobs then lock every
+    // selected step. lockStep = the last selected step (shown in the display).
+    std::vector<uint8_t> selMask = std::vector<uint8_t>(kSteps, 0);
+    int selCount() const { int n = 0; for (uint8_t v : selMask) n += v; return n; }
+    bool isSel(int s) const { return s >= 0 && s < kSteps && selMask[(size_t)s]; }
+    void clearSel() { std::fill(selMask.begin(), selMask.end(), (uint8_t)0); lockStep = -1; }
+    void toggleSel(int s)
+    {
+        if (s < 0 || s >= kSteps) return;
+        if (selMask[(size_t)s]) {
+            selMask[(size_t)s] = 0;
+            if (lockStep == s) { lockStep = -1; for (int i = kSteps - 1; i >= 0; --i) if (selMask[(size_t)i]) { lockStep = i; break; } }
+        } else { selMask[(size_t)s] = 1; lockStep = s; }
+    }
+    void dropSelFrom(int len) { for (int i = len; i < kSteps; ++i) selMask[(size_t)i] = 0; if (lockStep >= len) { lockStep = -1; for (int i = len - 1; i >= 0; --i) if (selMask[(size_t)i]) { lockStep = i; break; } } }
+    // the steps an edit applies to: the whole selection when s is part of it, else s alone
+    std::vector<int> editTargets(int s) const
+    {
+        std::vector<int> v;
+        if (isSel(s)) { for (int i = 0; i < kSteps; ++i) if (selMask[(size_t)i]) v.push_back(i); }
+        else v.push_back(s);
+        return v;
+    }
+    bool selLockDiffers(int pi, int iv)
+    {
+        for (int i = 0; i < kSteps; ++i) if (selMask[(size_t)i] && pat().locks[selTrack][i][pi] != iv) return true;
+        return false;
+    }
+
     void writeLock(int pi, int v)
     {
         char b[64];
-        Pattern& p = pat();
-        if (!(p.flags[selTrack][lockStep] & sfTrig) && v != kNoLock) {
-            std::string c; ensureTrig(c, lockStep); c.pop_back(); sendLines(c);
+        std::string c;
+        for (int s : editTargets(lockStep)) {
+            if (v != kNoLock) ensureTrig(c, s);
+            std::snprintf(b, sizeof(b), "l %d %d %d %d %d\n", editPattern(), selTrack, s, pi, v); c += b;
         }
-        std::snprintf(b, sizeof(b), "l %d %d %d %d %d", editPattern(), selTrack, lockStep, pi, v);
-        sendCmd(b);
+        if (!c.empty()) { c.pop_back(); sendLines(c); }
     }
 
     float knobValue(int k)
@@ -2164,7 +2206,7 @@ protected:
             recordLock(pi, (int)std::lround(v));
         } else if (lockStep >= 0) {
             const int iv = (int)std::lround(v);
-            if (pat().locks[selTrack][lockStep][pi] != iv) writeLock(pi, iv);
+            if (selLockDiffers(pi, iv)) writeLock(pi, iv);
         } else {
             setParam(selTrack * kTrackParams + pi, v);
         }
@@ -2215,7 +2257,7 @@ protected:
             return true;
         }
         if (ev.press && ev.key == kKeyEscape) {
-            if (overlay != ovNone) overlay = ovNone; else { lockStep = -1; noteStep = -1; }
+            if (overlay != ovNone) overlay = ovNone; else { clearSel(); noteStep = -1; }
             repaint(); return true;
         }
         if (pcKeys && overlay == ovNone) {
@@ -2338,7 +2380,9 @@ protected:
         if (machNext().in(x, y)) { setMachine(selTrack, machineOf(selTrack) + 1); return true; }
         if (machName().in(x, y)) { overlay = ovPicker; repaint(); return true; }
         if (lockStep >= 0 && lockClear().in(x, y)) {
-            char b[48]; std::snprintf(b, sizeof(b), "cl %d %d %d", editPattern(), selTrack, lockStep); sendCmd(b);
+            std::string c; char b[48];
+            for (int st : editTargets(lockStep)) { std::snprintf(b, sizeof(b), "cl %d %d %d\n", editPattern(), selTrack, st); c += b; }
+            if (!c.empty()) { c.pop_back(); sendLines(c); }
             repaint(); return true;
         }
         for (int i = 0; i < kPages; ++i) if (pageTab(i).in(x, y)) { page = i; repaint(); return true; }
@@ -2377,7 +2421,7 @@ protected:
             drag = dkTempo; dragY = y; dragStart = gp(gTEMPO); editParameter(kGlobalBase + gTEMPO, true); return true;
         }
         for (int i = 0; i < kPatterns; ++i)
-            if (patBtn(i).in(x, y)) { setParamGesture(kGlobalBase + gPATTERN, (float)i); lockStep = -1; noteStep = -1; stepPg = 0; repaint(); return true; }
+            if (patBtn(i).in(x, y)) { setParamGesture(kGlobalBase + gPATTERN, (float)i); clearSel(); noteStep = -1; stepPg = 0; repaint(); return true; }
         if (patCopy().in(x, y)) { patClip = editPattern(); repaint(); return true; }
         if (patPaste().in(x, y) && patClip >= 0) {
             char b[32]; std::snprintf(b, sizeof(b), "pc %d %d", editPattern(), patClip); sendCmd(b); repaint(); return true;
@@ -2387,7 +2431,7 @@ protected:
         for (int i = 0; i < kModes; ++i) if (modeBtn(i).in(x, y)) { mode = i; if (mode != mdNote) noteStep = -1; repaint(); return true; }
         if (fillBtn().in(x, y)) { fillOn = !fillOn; setState("cmd", fillOn ? "fill 1" : "fill 0"); repaint(); return true; }
         Pattern& p = pat();
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < kSteps / 16; ++i)
             if (stepPage(i).in(x, y)) {
                 const int want = (i + 1) * 16;
                 if (dbl) setTrackLen(selTrack, want, false, shift);
@@ -2399,11 +2443,11 @@ protected:
             repaint(); return true;
         }
         if (lenBox().in(x, y)) {
-            setTrackLen(selTrack, ((tlen(selTrack) - 1) / 16 + 1) % 4 * 16 + 16, true, shift);
+            setTrackLen(selTrack, ((tlen(selTrack) - 1) / 16 + 1) % (kSteps / 16) * 16 + 16, true, shift);
             repaint(); return true;
         }
         if (patLenBox().in(x, y)) {
-            p.length = (uint8_t)(((p.length - 1) / 16 + 1) % 4 * 16 + 16);
+            p.length = (uint8_t)(((p.length - 1) / 16 + 1) % (kSteps / 16) * 16 + 16);
             sendPatternSettings(); repaint(); return true;
         }
         if (scaleBox().in(x, y)) { p.scale = (uint8_t)((p.scale + (right ? 6 : 1)) % 7); sendPatternSettings(); repaint(); return true; }
@@ -2454,7 +2498,7 @@ protected:
                 drag = right ? dkNone : dkStepLen; dragIndex = s; dragY = y; dragStart = (float)p.gate[selTrack][s];
                 repaint(); return true;
             }
-            if (right) { lockStep = (lockStep == s) ? -1 : s; repaint(); return true; }
+            if (right) { toggleSel(s); repaint(); return true; }
             uint8_t f = p.flags[selTrack][s];
             std::string c;
             if (mode == mdTrig) f = (f & sfTrig) ? 0 : sfTrig;
@@ -2470,6 +2514,8 @@ protected:
             sendLines(c);
             repaint(); return true;
         }
+        // a left click on an empty spot ends the step selection
+        if (!right && selCount() > 0) { clearSel(); repaint(); }
         return true;
     }
 

@@ -7,7 +7,7 @@
 namespace kn {
 
 static constexpr int kTracks = 6;
-static constexpr int kSteps = 64;
+static constexpr int kSteps = 128;
 static constexpr int kPatterns = 16;
 
 // ---- per-track parameters (0..127), all of them can be locked per step ----

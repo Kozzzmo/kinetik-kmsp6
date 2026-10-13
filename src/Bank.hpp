@@ -13,11 +13,11 @@ enum StepFlags : uint8_t { sfTrig = 1, sfAccent = 2, sfSlide = 4 };
 static constexpr uint8_t kNoLock = 255;
 
 struct Pattern {
-    uint8_t length = 16;   // master length 1..64: pattern changes happen at its end
+    uint8_t length = 16;   // master length 1..kSteps (128): pattern changes happen at its end
     uint8_t scale = 0;     // index into kScaleMult
     uint8_t swing = 50;    // 50..80
     uint8_t accent = 64;   // 0..127
-    uint8_t trackLen[kTracks]; // per-track length 1..64
+    uint8_t trackLen[kTracks]; // per-track length 1..kSteps (128)
     uint8_t flags[kTracks][kSteps];
     uint8_t locks[kTracks][kSteps][kLockable];
     uint8_t cond[kTracks][kSteps];   // index into kConds (0 = always)
