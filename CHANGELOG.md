@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.3
+
+- **Edit several tracks at once**: right-click track buttons to add them to the selected track (pink frame,
+  "+2,3" in the display). Knobs move every track of the group by the same amount (each keeps its own offset);
+  machine, TRACK and ARP settings are set on all of them. Left-click a track to end the group. Right-click on the
+  selected track still auditions it.
+
 ## 0.4.2
 
 - **Updates really replace the plug-in**: the installers now always overwrite the installed files (on macOS an update

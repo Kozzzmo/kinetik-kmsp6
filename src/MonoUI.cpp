@@ -743,6 +743,7 @@ protected:
             const Color fg = sel ? th->selText : (off ? th->faint : th->text);
             if (sel) box(r, th->selFill);
             else { box(r, th->btnFill); frame(r, off ? Color(th->btnEdge, th->bg, 0.5f) : th->btnEdge); }
+            if (grouped() && inGroup(t)) frame(r, th->lock, -1.f, 2.f);   // edited together (right-click)
             char b[16]; std::snprintf(b, sizeof(b), "%d", t + 1);
             number(r.x + 10, r.y + 20, b, 22.f, fg, ALIGN_LEFT | ALIGN_MIDDLE);
             const bool lit = ((leds >> t) & 1) || ((held >> t) & 1);
@@ -1298,7 +1299,10 @@ protected:
     void setTrackParamOrLock(int pi, float v)
     {
         if (lockStep >= 0) writeLock(pi, (int)std::lround(v));
-        else setParamGesture(selTrack * kTrackParams + pi, v);
+        else {
+            setParamGesture(selTrack * kTrackParams + pi, v);
+            for (int t : groupOthers()) setParamGesture(t * kTrackParams + pi, v);
+        }
     }
     bool destClick(float x, float y)
     {
@@ -1326,6 +1330,11 @@ protected:
         char b[64];
         std::snprintf(b, sizeof(b), "T%d", selTrack + 1);
         number(32, 170, b, 22.f, th->lcdText, ALIGN_LEFT | ALIGN_MIDDLE);
+        if (grouped()) {   // the other tracks edited with it
+            std::string g = "+";
+            for (int t : groupOthers()) { if (g.size() > 1) g += ","; g += std::to_string(t + 1); }
+            label(76, 170, g.c_str(), 11.f, th->lock, ALIGN_LEFT | ALIGN_MIDDLE);
+        }
         frame(machPrev(), th->lcdText); label(machPrev().cx(), machPrev().cy() + 1, "\xE2\x97\x80", 10.f, th->lcdText, ALIGN_CENTER | ALIGN_MIDDLE, fnSans);
         frame(machNext(), th->lcdText); label(machNext().cx(), machNext().cy() + 1, "\xE2\x96\xB6", 10.f, th->lcdText, ALIGN_CENTER | ALIGN_MIDDLE, fnSans);
         box(machName(), th->nameFill); label(machName().cx(), machName().cy() + 1, kMachineDefs[m].name, 13.f, th->nameText);
@@ -2271,6 +2280,39 @@ protected:
         repaint();
     }
 
+    // ---- multi-track selection: right-click on a track button adds it to (or removes it from) the group; the
+    // selected track is always in it. Knobs move every track of the group by the same amount (each keeps its own
+    // offset), machine and TRACK / ARP settings are set on all of them. Left-click on a track ends the group.
+    uint8_t trackGroup = 0;   // bit t = track t is edited together with selTrack
+    float grpBase[kTracks] = {};
+    bool grouped() const { return (trackGroup & ~(1u << selTrack)) != 0; }
+    bool inGroup(int t) const { return t == selTrack || ((trackGroup >> t) & 1); }
+    // other tracks of the group (not selTrack)
+    std::vector<int> groupOthers() const { std::vector<int> v; for (int t = 0; t < kTracks; ++t) if (t != selTrack && ((trackGroup >> t) & 1)) v.push_back(t); return v; }
+    void groupBegin(int pi)
+    {
+        for (int t = 0; t < kTracks; ++t) grpBase[t] = tp(t, pi);
+        for (int t : groupOthers()) editParameter(t * kTrackParams + pi, true);
+    }
+    void groupEnd(int pi) { for (int t : groupOthers()) editParameter(t * kTrackParams + pi, false); }
+    // selTrack's value went from grpBase[selTrack] to v: move the others by the same amount
+    void groupFollow(int pi, float v)
+    {
+        const float d = v - grpBase[selTrack];
+        for (int t : groupOthers()) setParam(t * kTrackParams + pi, clampf(grpBase[t] + d, 0.f, 127.f));
+    }
+    void setKitGroup(int f, int v)
+    {
+        setKit(selTrack, f, v);
+        for (int t : groupOthers()) setKit(t, f, v);
+    }
+    void setMachineGroup(int m)
+    {
+        m = clampi(m, 0, kMachines - 1);
+        setMachine(selTrack, m);
+        for (int t : groupOthers()) setMachine(t, m);
+    }
+
     // ---- multi-step selection: each right-click adds a step (or removes it); the knobs then lock every
     // selected step. lockStep = the last selected step (shown in the display).
     std::vector<uint8_t> selMask = std::vector<uint8_t>(kSteps, 0);
@@ -2335,6 +2377,7 @@ protected:
             if (selLockDiffers(pi, iv)) writeLock(pi, iv);
         } else {
             setParam(selTrack * kTrackParams + pi, v);
+            if (grouped()) groupFollow(pi, v);
         }
         repaint();
     }
@@ -2418,10 +2461,14 @@ protected:
             }
             if (drag == dkTrackKnob && std::fabs(y - dragY) < 3.f && page >= pgLfo1 && page <= pgLfo3 && (dragIndex == 4 || dragIndex == 5)) {
                 editParameter(selTrack * kTrackParams + pageParam(page, dragIndex), false);
+                if (grouped()) groupEnd(pageParam(page, dragIndex));
                 drag = dkNone; openDestMenu(page - pgLfo1);    // a click (no drag) on DEST / TARGET opens the list
                 return true;
             }
-            if (drag == dkTrackKnob && lockStep < 0 && !recording()) editParameter(selTrack * kTrackParams + pageParam(page, dragIndex), false);
+            if (drag == dkTrackKnob && lockStep < 0 && !recording()) {
+                editParameter(selTrack * kTrackParams + pageParam(page, dragIndex), false);
+                if (grouped()) groupEnd(pageParam(page, dragIndex));
+            }
             recDirty = false;
             if (drag == dkMasterKnob) editParameter(kGlobalBase + masterParam(mpage, dragIndex), false);
             if (drag == dkTempo) editParameter(kGlobalBase + gTEMPO, false);
@@ -2437,7 +2484,7 @@ protected:
 
         if (overlay == ovPicker) {
             for (int m = 0; m < kMachines; ++m)
-                if (pickerCell(m).in(x, y)) { setMachine(selTrack, m); break; }
+                if (pickerCell(m).in(x, y)) { setMachineGroup(m); break; }
             overlay = ovNone; repaint(); return true;
         }
         if (gripR().in(x, y) && overlay == ovNone) {
@@ -2499,8 +2546,9 @@ protected:
                 repaint(); return true;
             }
             if (trackBtn(t).in(x, y)) {
-                selectTrack(t);
-                if (right) { keyTrack = t; keyNote = lastNote; playNote(t, lastNote, 100, true); } // audition
+                if (right && t != selTrack) trackGroup ^= (uint8_t)(1u << t);          // add to / remove from the group
+                else if (right) { keyTrack = t; keyNote = lastNote; playNote(t, lastNote, 100, true); } // audition
+                else { trackGroup = 0; selectTrack(t); }
                 repaint(); return true;
             }
         }
@@ -2509,8 +2557,8 @@ protected:
         if (undoBtn().in(x, y)) { undo(); return true; }
         if (presetBtn().in(x, y)) { openPresets(); return true; }
         if (saveBtn().in(x, y)) { openSave(); return true; }
-        if (machPrev().in(x, y)) { setMachine(selTrack, machineOf(selTrack) - 1); return true; }
-        if (machNext().in(x, y)) { setMachine(selTrack, machineOf(selTrack) + 1); return true; }
+        if (machPrev().in(x, y)) { setMachineGroup(machineOf(selTrack) - 1); return true; }
+        if (machNext().in(x, y)) { setMachineGroup(machineOf(selTrack) + 1); return true; }
         if (machName().in(x, y)) { overlay = ovPicker; repaint(); return true; }
         if (lockStep >= 0 && lockClear().in(x, y)) {
             std::string c; char b[48];
@@ -2539,7 +2587,7 @@ protected:
 
         for (int k = 0; k < 8; ++k) {
             if (!knob(k).in(x, y) || kitField(k) < 0) continue;
-            if (dbl) { setKit(selTrack, kitField(k), kKitDefault[kitField(k)]); return true; }
+            if (dbl) { setKitGroup(kitField(k), kKitDefault[kitField(k)]); return true; }
             drag = dkKit; dragIndex = k; dragY = y; dragStart = bank->kit[selTrack][kitField(k)];
             repaint(); return true;
         }
@@ -2548,11 +2596,14 @@ protected:
             const int pi = pageParam(page, k);
             if (dbl) {
                 if (lockStep >= 0) writeLock(pi, kNoLock);
-                else setParamGesture(selTrack * kTrackParams + pi, pi < 8 ? kMachineDefs[machineOf(selTrack)].def[pi] : kFxDefaults[pi - 8]);
+                else {
+                    setParamGesture(selTrack * kTrackParams + pi, pi < 8 ? kMachineDefs[machineOf(selTrack)].def[pi] : kFxDefaults[pi - 8]);
+                    for (int t : groupOthers()) setParamGesture(t * kTrackParams + pi, pi < 8 ? kMachineDefs[machineOf(t)].def[pi] : kFxDefaults[pi - 8]);
+                }
                 repaint(); return true;
             }
             drag = dkTrackKnob; dragIndex = k; dragY = y; dragStart = knobValue(k); recDirty = false;
-            if (lockStep < 0 && !recording()) editParameter(selTrack * kTrackParams + pi, true);
+            if (lockStep < 0 && !recording()) { editParameter(selTrack * kTrackParams + pi, true); if (grouped()) groupBegin(pi); }
             else if (lockStep >= 0 && pat().locks[selTrack][lockStep][pi] == kNoLock) setKnob(k, dragStart);
             repaint(); return true;
         }
@@ -2711,7 +2762,7 @@ protected:
             const int f = kitField(dragIndex);
             if (f >= 0) {
                 const int nv = clampi((int)std::lround(dragStart + (dragY - y) * 0.05f), 0, kKitMax[f]);
-                if (nv != bank->kit[selTrack][f]) setKit(selTrack, f, nv);
+                if (nv != bank->kit[selTrack][f]) setKitGroup(f, nv);
             }
             break;
         }
@@ -2746,14 +2797,14 @@ protected:
         for (int k = 0; k < 8; ++k) {
             if (knob(k).in(x, y) && kitField(k) >= 0) {
                 const int f = kitField(k);
-                setKit(selTrack, f, clampi(bank->kit[selTrack][f] + (int)d, 0, kKitMax[f])); return true;
+                setKitGroup(f, clampi(bank->kit[selTrack][f] + (int)d, 0, kKitMax[f])); return true;
             }
             if (knob(k).in(x, y) && pageParam(page, k) >= 0) {
                 const uint32_t idx = selTrack * kTrackParams + pageParam(page, k);
                 const bool gesture = lockStep < 0 && !recording();
-                if (gesture) editParameter(idx, true);
+                if (gesture) { editParameter(idx, true); if (grouped()) groupBegin(pageParam(page, k)); }
                 setKnob(k, knobValue(k) + d);
-                if (gesture) editParameter(idx, false);
+                if (gesture) { editParameter(idx, false); if (grouped()) groupEnd(pageParam(page, k)); }
                 recDirty = false;
                 return true;
             }
