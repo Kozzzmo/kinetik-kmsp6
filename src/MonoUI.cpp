@@ -1889,7 +1889,9 @@ protected:
             int idx; float v;
             if (std::sscanf(line.c_str(), "V %d %f", &idx, &v) == 2 && idx >= 0) {
                 if (v1) idx = presetIndexV1(idx);
-                if (idx < kGlobalBase + gOUT_STEP) nv[idx] = v;
+                // a preset file can come from anywhere: keep only finite values inside the parameter's range
+                if (idx < kGlobalBase + gOUT_STEP && std::isfinite(v))
+                    nv[idx] = idx == kGlobalBase + gTEMPO ? clampf(v, 40.f, 240.f) : clampf(v, 0.f, 127.f);
             }
             std::sscanf(line.c_str(), "PATTERN %d", &patIdx);
             st = e + 1;
@@ -1899,6 +1901,7 @@ protected:
             if (deserializeBank(*fileBank, all.c_str() + bankPos + 6)) {
                 std::memcpy(nb->machine, fileBank->machine, sizeof(nb->machine));
                 std::memcpy(nb->mute, fileBank->mute, sizeof(nb->mute));
+                std::memcpy(nb->solo, fileBank->solo, sizeof(nb->solo));   // no solo left over from before
                 std::memcpy(nb->kit, fileBank->kit, sizeof(nb->kit));
                 if (v1) for (int t = 0; t < kTracks; ++t) migrateFilterV1(&nv[t * kTrackParams], fileBank->kit[t][kfKeyTrk]);
                 if (withPatterns) for (int p = 0; p < kPatterns; ++p) nb->patterns[p] = fileBank->patterns[p];

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.8
+
+- Windows: the update check works when the user folder has accents (e.g. C:\Users\Hélène); before, it always said
+  "Could not reach the update server" there. A stuck download is now stopped after its time limit.
+- User presets: values from a preset file are kept inside each parameter's range (a damaged or hand-edited file
+  could send invalid values to the sound engine), and loading a preset clears any solo left from before.
+
 ## 0.4.7
 
 - **Echo and reverb models rebuilt so each one really sounds different**, and MOD now does something specific to

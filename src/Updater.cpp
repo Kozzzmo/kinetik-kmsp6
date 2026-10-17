@@ -20,25 +20,8 @@ namespace kn {
 namespace upd {
 
 // ---- small system helpers
-std::string dataDir()
-{
-    std::string d = lic::licenseDir(true);       // <user data>/Kinetik/Licenses/
-    if (d.size() > 10) d = d.substr(0, d.size() - 9);  // -> <user data>/Kinetik/
-    return d;
-}
-std::string tempDir()
-{
-#ifdef _WIN32
-    const char* t = std::getenv("TEMP");
-    return std::string(t ? t : "C:\\Windows\\Temp") + "\\";
-#else
-    const char* t = std::getenv("TMPDIR");
-    std::string s = t ? t : "/tmp";
-    if (s.empty() || s.back() != '/') s += '/';
-    return s;
-#endif
-}
-
+// On Windows every path here is UTF-8 and goes through the wide (UTF-16) API: the ANSI getenv / fopen
+// mangled user folders with accents ("C:\\Users\\Hélène"), so the update check always failed there.
 #ifdef _WIN32
 std::wstring widen(const std::string& s)
 {
@@ -48,7 +31,57 @@ std::wstring widen(const std::string& s)
     if (!w.empty() && w.back() == L'\0') w.pop_back();
     return w;
 }
+static std::string narrow(const std::wstring& w)
+{
+    const int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string s((size_t)(n > 0 ? n : 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], n, nullptr, nullptr);
+    if (!s.empty() && s.back() == '\0') s.pop_back();
+    return s;
+}
+static std::string envUtf8(const wchar_t* name)
+{
+    const wchar_t* v = _wgetenv(name);
+    return v ? narrow(v) : std::string();
+}
 #endif
+
+std::string dataDir()
+{
+#ifdef _WIN32
+    const std::string base = envUtf8(L"APPDATA");
+    if (base.empty()) return std::string();
+    const std::string d = base + "\\Kinetik";
+    CreateDirectoryW(widen(d).c_str(), nullptr);
+    return d + "\\";
+#else
+    std::string d = lic::licenseDir(true);       // <user data>/Kinetik/Licenses/
+    if (d.size() > 10) d = d.substr(0, d.size() - 9);  // -> <user data>/Kinetik/
+    return d;
+#endif
+}
+std::string tempDir()
+{
+#ifdef _WIN32
+    wchar_t buf[MAX_PATH + 2] = {};
+    const DWORD n = GetTempPathW(MAX_PATH + 1, buf);     // ends with a backslash
+    if (n > 0 && n <= MAX_PATH + 1) return narrow(buf);
+    return "C:\\Windows\\Temp\\";
+#else
+    const char* t = std::getenv("TMPDIR");
+    std::string s = t ? t : "/tmp";
+    if (s.empty() || s.back() != '/') s += '/';
+    return s;
+#endif
+}
+static void removeFile(const std::string& p)
+{
+#ifdef _WIN32
+    _wremove(widen(p).c_str());
+#else
+    std::remove(p.c_str());
+#endif
+}
 
 static bool exists(const std::string& p)
 {
@@ -85,13 +118,13 @@ bool download(const std::string& url, const std::string& path, int timeoutSec)
     if (url.rfind("https://", 0) != 0) return false;
     const std::string to = std::to_string(timeoutSec);
 #ifdef _WIN32
-    const char* sr = std::getenv("SystemRoot");
-    const std::wstring curl = widen(std::string(sr ? sr : "C:\\Windows") + "\\System32\\curl.exe");
+    const std::string sr = envUtf8(L"SystemRoot");
+    const std::wstring curl = widen((sr.empty() ? std::string("C:\\Windows") : sr) + "\\System32\\curl.exe");
     std::wstring cmd = L"\"" + curl + L"\" -sSfL --proto =https --max-time " + widen(to) + L" -o \"" + widen(path) + L"\" \"" + widen(url) + L"\"";
     STARTUPINFOW si = {}; si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
     if (!CreateProcessW(curl.c_str(), &cmd[0], nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) return false;
-    WaitForSingleObject(pi.hProcess, (DWORD)(timeoutSec + 10) * 1000);
+    if (WaitForSingleObject(pi.hProcess, (DWORD)(timeoutSec + 10) * 1000) == WAIT_TIMEOUT) TerminateProcess(pi.hProcess, 1);
     DWORD code = 1; GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
     return code == 0;
@@ -233,7 +266,7 @@ void Checker::doCheck(Checker* c, bool force)
     if (!download(c->url, tmp, 20) || !readAll(tmp, text, 64 * 1024)) {
         c->setMsg("Could not reach the update server."); c->state.store(force ? stFailed : stIdle); return;
     }
-    std::remove(tmp.c_str());
+    removeFile(tmp);
     const Manifest m = parse(text, c->prod);
     if (!m.valid) { c->setMsg("The update information is not valid."); c->state.store(force ? stFailed : stIdle); return; }
     { std::lock_guard<std::mutex> lk(c->mx); c->man = m; }
@@ -258,7 +291,7 @@ void Checker::doInstall(Checker* c, bool)
     const std::string path = tempDir() + (slash == std::string::npos ? std::string("kinetik-setup") : m.url.substr(slash + 1));
     std::string data;
     if (!download(m.url, path, 600) || !readAll(path, data, 512u * 1024 * 1024)) { c->setMsg("The download failed."); c->state.store(stFailed); return; }
-    if (sha512Hex(data) != m.sha512) { std::remove(path.c_str()); c->setMsg("The download is damaged or not genuine: it was deleted."); c->state.store(stFailed); return; }
+    if (sha512Hex(data) != m.sha512) { removeFile(path); c->setMsg("The download is damaged or not genuine: it was deleted."); c->state.store(stFailed); return; }
     data.clear();
     if (!openInstaller(path)) { c->setMsg("Could not open the installer."); c->state.store(stFailed); return; }
     c->state.store(stOpened);
