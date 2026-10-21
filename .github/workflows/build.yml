@@ -27,6 +27,10 @@ jobs:
         run: ./scripts/setup.sh
       - name: "Build (universal: Apple Silicon + Intel)"
         run: make universal -j4
+      - name: Sound regression (Apple clang, report only)
+        run: |
+          clang++ -O2 -std=c++17 tests/regress.cpp -o /tmp/regress-test
+          /tmp/regress-test || echo "::warning::factory presets sound different with Apple clang (see the log)"
       - name: Import the Developer ID certificates
         if: env.HAS_MAC_CERT == 'true'
         env:
@@ -167,6 +171,8 @@ jobs:
           g++ -O2 -std=c++17 -Isrc tests/update.cpp /tmp/m1.o /tmp/m2.o -o /tmp/update-test && /tmp/update-test
           g++ -O2 -std=c++17 tests/presets.cpp -o /tmp/presets-test && mkdir -p out && /tmp/presets-test > /dev/null
           g++ -O2 -std=c++17 tests/features.cpp -o /tmp/features-test && /tmp/features-test
+          g++ -O2 -std=c++17 tests/regress.cpp -o /tmp/regress-test && /tmp/regress-test   # sound of every factory preset
+          ./scripts/check-shared.sh                                                  # files shared with the sister plug-in
       - name: Package
         run: |
           mkdir -p pkg && cp -R bin/*.vst3 bin/*.clap pkg/ && cp README.md EULA.txt THIRD_PARTY_NOTICES.txt pkg/

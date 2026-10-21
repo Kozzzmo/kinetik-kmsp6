@@ -291,7 +291,7 @@ protected:
         }
         engine->fill = fillFlag.load();
         engine->recording = recFlag.load();
-        if (panicFlag.exchange(false)) engine->allNotesOff();
+        if (panicFlag.exchange(false)) { engine->allNotesOff(); engine->resetExpression(); }
 
         Transport tp;
         const TimePosition& pos = getTimePosition();
@@ -313,6 +313,18 @@ protected:
             const uint8_t st = ev.data[0] & 0xF0;
             const int ch = (ev.data[0] & 0x0F) + 1;
             if (st == 0xB0 && ev.size >= 3 && (ev.data[1] == 123 || ev.data[1] == 120)) { engine->allNotesOff(); continue; }
+            if (st == 0xB0 && ev.size >= 3 && ev.data[1] == 121) { engine->resetExpression(); continue; }
+            // expression: pitch bend (+-2 semitones), mod wheel (vibrato), channel pressure (filter)
+            if (st == 0xE0 || st == 0xD0 || (st == 0xB0 && ev.size >= 3 && ev.data[1] == 1)) {
+                float* dst = st == 0xE0 ? engine->midiBend : (st == 0xD0 ? engine->midiPress : engine->midiMod);
+                float v;
+                if (st == 0xE0) { if (ev.size < 3) continue; v = (float)(((int)ev.data[2] << 7 | ev.data[1]) - 8192) / 8192.f * 2.f; }
+                else v = (st == 0xD0 ? ev.data[1] : ev.data[2]) / 127.f;
+                bool routed = false;
+                for (int t = 0; t < kTracks; ++t) if (engine->bank.kit[t][kfMidi] == ch) { dst[t] = v; routed = true; }
+                if (!routed) dst[sel] = v;
+                continue;
+            }
             if (ev.size < 3 || (st != 0x90 && st != 0x80)) continue;
             const bool on = st == 0x90 && ev.data[2] > 0;
             bool routed = false;

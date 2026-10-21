@@ -7,6 +7,7 @@
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <sys/stat.h>
 extern char** environ;
 #endif
 #include "Updater.hpp"
@@ -72,6 +73,21 @@ std::string tempDir()
     std::string s = t ? t : "/tmp";
     if (s.empty() || s.back() != '/') s += '/';
     return s;
+#endif
+}
+// downloads go to a folder only this user can write (<user data>/Kinetik/Updates), not the shared temp folder:
+// nothing else can swap the installer between its check and its opening
+static std::string downloadDir()
+{
+    const std::string base = dataDir();
+    if (base.empty()) return tempDir();
+    const std::string d = base + "Updates";
+#ifdef _WIN32
+    CreateDirectoryW(widen(d).c_str(), nullptr);
+    return d + "\\";
+#else
+    mkdir(d.c_str(), 0700);
+    return d + "/";
 #endif
 }
 static void removeFile(const std::string& p)
@@ -171,6 +187,25 @@ bool openInstaller(const std::string& path)
     (void)path; return false;
 #endif
 }
+bool openFolder(const std::string& path)
+{
+    if (path.empty()) return false;
+#ifdef _WIN32
+    return (INT_PTR)ShellExecuteW(nullptr, L"open", widen(path).c_str(), nullptr, nullptr, SW_SHOWNORMAL) > 32;
+#else
+  #ifdef __APPLE__
+    const char* opener = "/usr/bin/open";
+  #else
+    const char* opener = "/usr/bin/xdg-open";
+  #endif
+    std::vector<std::string> a = {opener, path};
+    std::vector<char*> argv; for (auto& s : a) argv.push_back(&s[0]); argv.push_back(nullptr);
+    pid_t pid = 0;
+    if (posix_spawn(&pid, opener, nullptr, nullptr, argv.data(), environ) != 0) return false;
+    std::thread([pid] { int st = 0; waitpid(pid, &st, 0); }).detach();   // reap it (no zombie)
+    return true;
+#endif
+}
 bool openPage(const std::string& url)
 {
     if (url.rfind("https://", 0) != 0) return false;
@@ -185,7 +220,9 @@ bool openPage(const std::string& url)
     std::vector<std::string> a = {opener, url};
     std::vector<char*> argv; for (auto& s : a) argv.push_back(&s[0]); argv.push_back(nullptr);
     pid_t pid = 0;
-    return posix_spawn(&pid, opener, nullptr, nullptr, argv.data(), environ) == 0;
+    if (posix_spawn(&pid, opener, nullptr, nullptr, argv.data(), environ) != 0) return false;
+    std::thread([pid] { int st = 0; waitpid(pid, &st, 0); }).detach();   // reap it (no zombie)
+    return true;
 #endif
 }
 
@@ -261,7 +298,7 @@ void Checker::doCheck(Checker* c, bool force)
     Settings st = loadSettings(c->prod);
     st.last = (long long)std::time(nullptr);
     saveSettings(c->prod, st);
-    const std::string tmp = tempDir() + "kinetik-" + c->prod + "-update.txt";
+    const std::string tmp = downloadDir() + "kinetik-" + c->prod + "-update.txt";
     std::string text;
     if (!download(c->url, tmp, 20) || !readAll(tmp, text, 64 * 1024)) {
         c->setMsg("Could not reach the update server."); c->state.store(force ? stFailed : stIdle); return;
@@ -288,7 +325,7 @@ void Checker::doInstall(Checker* c, bool)
     const Manifest m = c->manifest();
     c->state.store(stDownloading);
     const size_t slash = m.url.find_last_of('/');
-    const std::string path = tempDir() + (slash == std::string::npos ? std::string("kinetik-setup") : m.url.substr(slash + 1));
+    const std::string path = downloadDir() + (slash == std::string::npos ? std::string("kinetik-setup") : m.url.substr(slash + 1));
     std::string data;
     if (!download(m.url, path, 600) || !readAll(path, data, 512u * 1024 * 1024)) { c->setMsg("The download failed."); c->state.store(stFailed); return; }
     if (sha512Hex(data) != m.sha512) { removeFile(path); c->setMsg("The download is damaged or not genuine: it was deleted."); c->state.store(stFailed); return; }

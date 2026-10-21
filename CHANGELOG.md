@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.5.0
+
+- **MIDI expression**: pitch bend (±2 semitones), mod wheel (vibrato) and channel aftertouch (brighter filter) now
+  play the tracks that receive the notes; MIDI CC 121 and panic reset them.
+- **Undo on 40 levels**: UNDO now steps back through knob moves, step edits, randomizes, presets and pastes, one
+  action at a time (Ctrl/Cmd+Z). Right-click on UNDO, Ctrl+Shift+Z or Ctrl+Y = redo. The button shows what the next
+  undo will revert.
+- **Tooltips**: hover a knob or a button for a moment to see what it does.
+- **Preset browser**: type to search (name and description), a FAVOURITES tab (click the star of any preset), and a
+  **MORPH** slider that moves the current sound towards the selected preset (switches and machines change at 50 %;
+  tempo and patterns are not touched; one undo step per move).
+- **MIDI export**: MIDI in the PATTERNS box writes the edited pattern as a .mid file into
+  Documents / Kinetik / KMSP-6 MIDI and opens the folder: drag it onto a MIDI track of the host (one MIDI
+  track per track on channels 1-6, chords of LINK groups included).
+- **Track tools**: two arrow buttons move the steps of the track one step earlier / later (locks follow); COPY also
+  copies the track's sound and right-click on PASTE pastes the sound only; EUCLID and ROTATE on the TRACK page spread
+  N hits evenly over the track.
+- **Anti-aliased DRIVE** (track and master): much less aliasing (harsh, unrelated high tones) when driven hard,
+  same level and tone.
+- **Lower CPU**: the echo and reverb sleep while nothing is sent to them and their tail has died away; the reverb's
+  modulation is computed less often. With the demo preset: playing 2.3 % -> 1.6 % of one core, stopped 1.2 % -> 0.3 %.
+- Windows: user presets, favourites and licences work in user folders whose name uses other alphabets.
+- Updates: the downloaded installer is kept in a private folder of the user (Kinetik / Updates) until it is opened.
+- Tests: the sound of every factory preset is now checked automatically at each build.
+
 ## 0.4.8
 
 - Windows: the update check works when the user folder has accents (e.g. C:\Users\Hélène); before, it always said

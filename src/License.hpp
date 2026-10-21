@@ -18,11 +18,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
-#include <dirent.h>
-#include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h>
-#endif
+#include "FsUtf8.hpp"
 
 extern "C" {
 #include "third_party/monocypher/monocypher-ed25519.h"
@@ -120,33 +116,33 @@ inline Info verify(const std::string& text, const char* product, const uint8_t* 
 inline std::string licenseDir(bool create)
 {
 #ifdef _WIN32
-    const char* base = std::getenv("APPDATA");
-    if (!base) return std::string();
-    std::string d = std::string(base) + "\\Kinetik";
-    if (create) _mkdir(d.c_str());
+    const std::string base = fs::env("APPDATA");
+    if (base.empty()) return std::string();
+    std::string d = base + "\\Kinetik";
+    if (create) fs::makeDir(d);
     d += "\\Licenses";
-    if (create) _mkdir(d.c_str());
+    if (create) fs::makeDir(d);
     return d + "\\";
 #else
-    const char* base = std::getenv("HOME");
-    if (!base) return std::string();
+    const std::string base = fs::env("HOME");
+    if (base.empty()) return std::string();
    #ifdef __APPLE__
-    std::string d = std::string(base) + "/Library/Application Support";
+    std::string d = base + "/Library/Application Support";
    #else
-    std::string d = std::string(base) + "/.config";
+    std::string d = base + "/.config";
    #endif
-    if (create) mkdir(d.c_str(), 0755);
+    if (create) fs::makeDir(d);
     d += "/Kinetik";
-    if (create) mkdir(d.c_str(), 0755);
+    if (create) fs::makeDir(d);
     d += "/Licenses";
-    if (create) mkdir(d.c_str(), 0755);
+    if (create) fs::makeDir(d);
     return d + "/";
 #endif
 }
 
 inline bool readFile(const std::string& path, std::string& out, size_t maxBytes = 64 * 1024)
 {
-    FILE* fp = std::fopen(path.c_str(), "rb");
+    FILE* fp = fs::open(path, "rb");
     if (!fp) return false;
     out.clear();
     char buf[4096]; size_t n;
@@ -161,18 +157,13 @@ inline Info findInstalled(const char* product)
     Info none;
     const std::string dir = licenseDir(false);
     if (dir.empty()) return none;
-    DIR* d = opendir(dir.c_str());
-    if (!d) return none;
     Info found;
-    while (dirent* e = readdir(d)) {
-        const std::string f = e->d_name;
-        if (f.size() < 17 || f.compare(f.size() - 16, 16, ".kinetik-license") != 0) continue;
+    for (const std::string& f : fs::list(dir, ".kinetik-license")) {
         std::string text;
         if (!readFile(dir + f, text)) continue;
         Info i = verify(text, product);
         if (i.valid) { found = i; break; }
     }
-    closedir(d);
     return found;
 }
 
@@ -189,7 +180,7 @@ inline Info install(const std::string& text, const char* product)
     // store the canonical text, not whatever surrounded it
     const size_t a = text.find("KINETIK-LICENSE 1");
     const std::string body = a == std::string::npos ? text : text.substr(a);
-    FILE* fp = std::fopen((dir + safe + ".kinetik-license").c_str(), "wb");
+    FILE* fp = fs::open(dir + safe + ".kinetik-license", "wb");
     if (!fp) { i.valid = false; i.error = "Could not write the licence file."; return i; }
     std::fwrite(body.data(), 1, body.size(), fp);
     std::fclose(fp);

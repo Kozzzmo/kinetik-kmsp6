@@ -85,6 +85,8 @@ public:
         echoLpL = echoLpR = echoHpL = echoHpR = echoLp2L = echoLp2R = 0.f;
         holdL = holdR = 0.f; holdCnt = 0; wowPh = flutPh = modPh = chorPh = 0.f; drift = driftT = 0.f; driftCnt = 0;
         echoDelay = 1000.f;
+        for (int k = 0; k < 8; ++k) revModCur[k] = revModInc[k] = 0.f;
+        revModCnt = 0; echoQuiet = revQuiet = 0.0; echoAwake = revAwake = true;
     }
 
     // g: global parameters; main/send buffers are mixed into out (main bus + echo + reverb, then master chain)
@@ -193,7 +195,39 @@ public:
         const float drv = g[gDRIVE] / 127.f;
         const float mv = g[gVOLUME] / 127.f; const float vol = mv * mv * 1.2f;
 
+        // ================= idle detection: echo and reverb sleep once their sends are silent and the tail has died
+        // away below -120 dB (estimated from feedback / decay time). Their state is cleared when they fall asleep,
+        // so a time or size change made while asleep never replays old audio.
+        float pkD = 0.f, pkR = 0.f;
         for (uint32_t i = 0; i < n; ++i) {
+            pkD = std::max(pkD, std::max(std::fabs(sendDL[i]), std::fabs(sendDR[i])));
+            pkR = std::max(pkR, std::max(std::fabs(sendRL[i]), std::fabs(sendRR[i])));
+        }
+        constexpr float kQuiet = 1e-6f;
+        echoQuiet = pkD > kQuiet ? 0.0 : echoQuiet + n;
+        revQuiet = pkR > kQuiet ? 0.0 : revQuiet + n;
+        double echoTail = 1e300;
+        if (fb < 0.97f) {
+            const double dMax = std::max(echoDelay, targetDelay) * std::max(1.f, rRatio) + wowDepth + flutDepth + 2.f * driftDepth + chorDepth + 64.0;
+            const double repeats = fb < 1e-3f ? 1.0 : std::ceil(std::log(1e-6) / std::log((double)fb));
+            echoTail = dMax * (repeats + 2.0);
+        }
+        const double revTail = (double)psz + (double)ssz + rt * sr * 2.0 * (rm == rmShimmer ? 3.0 : 1.0) + 8192.0;
+        const bool echoOn = echoQuiet <= echoTail, revOn = revQuiet <= revTail;
+        if (!echoOn && echoAwake) {
+            std::fill(echoL.begin(), echoL.end(), 0.f); std::fill(echoR.begin(), echoR.end(), 0.f);
+            echoLpL = echoLpR = echoHpL = echoHpR = echoLp2L = echoLp2R = 0.f; holdL = holdR = 0.f;
+        }
+        if (!revOn && revAwake) {
+            clearReverb(); std::fill(preBuf.begin(), preBuf.end(), 0.f);
+            revHpZ = 0.f; gateEnv = 0.f; gateHold = 0;
+        }
+        echoAwake = echoOn; revAwake = revOn;
+        if (!echoOn) echoDelay = targetDelay;
+
+        for (uint32_t i = 0; i < n; ++i) {
+            float dl = 0.f, dr = 0.f;
+            if (echoOn) {
             // ---------------- echo
             echoDelay += (targetDelay - echoDelay) * 0.0005f;
             float d = echoDelay, dR;
@@ -212,8 +246,8 @@ public:
             } else {
                 dR = echoDelay * rRatio;
             }
-            const float dl = readFrac(echoL, esz, (float)echoW - d);
-            const float dr = readFrac(echoR, esz, (float)echoW - dR);
+            dl = readFrac(echoL, esz, (float)echoW - d);
+            dr = readFrac(echoR, esz, (float)echoW - dR);
             float inL, inR;
             if (em == emPingPong) {
                 inL = 0.5f * (sendDL[i] + sendDR[i]) + fb * dr;   // the input enters on the left only
@@ -242,7 +276,10 @@ public:
             }
             echoL[echoW] = yl; echoR[echoW] = yr;
             echoW = (echoW + 1) % esz;
+            }
 
+            float outRL = 0.f, outRR = 0.f;
+            if (revOn) {
             // ---------------- reverb
             float rin = 0.5f * (sendRL[i] + sendRR[i]);
             revHpZ = rin + rHpA * (revHpZ - rin); rin = rin - revHpZ;
@@ -270,15 +307,21 @@ public:
             }
             // input diffusion (plate: 4 strong allpasses, hall / shimmer 2, room 1, spring none)
             for (int k = 0; k < diffCount; ++k) x = allpass(diff[k], diffPos[k], diffLen[k], x, diffG);
+            // line modulation: the sines are evaluated every kModStep samples and interpolated in between
+            if (--revModCnt <= 0) {
+                revModCnt = kModStep;
+                const float ph = modPh + (float)kModStep * 0.37f / sr;
+                for (int k = 0; k < 8; ++k)
+                    revModInc[k] = (lineMod * std::sin(kTwoPi * (ph + k * 0.125f)) - revModCur[k]) / (float)kModStep;
+            }
             modPh += 0.37f / sr; if (modPh >= 1.f) modPh -= 1.f;
             float o[8], sum = 0.f;
             for (int k = 0; k < 8; ++k) {
-                const float m = lineMod * std::sin(kTwoPi * (modPh + k * 0.125f));
-                o[k] = readFrac(revLine[k], (uint32_t)revLine[k].size(), (float)revW[k] - (float)revLen[k] - m);
+                revModCur[k] += revModInc[k];
+                o[k] = readFrac(revLine[k], (uint32_t)revLine[k].size(), (float)revW[k] - (float)revLen[k] - revModCur[k]);
                 sum += o[k];
             }
             const float hh = sum * 0.25f;
-            float outRL = 0.f, outRR = 0.f;
             for (int k = 0; k < 8; ++k) {
                 float v = (o[k] - hh) * revG[k];
                 revLp[k] = v + damp * (revLp[k] - v);
@@ -301,9 +344,11 @@ public:
                 const float tgt = gateHold > 0 ? 1.f : 0.f;
                 gateGain += (tgt - gateGain) * (tgt > gateGain ? 0.02f : 0.004f);
             } else gateGain = 1.f;
+            outRL *= gateGain; outRR *= gateGain;
+            }
 
-            float l = mainL[i] + dl * eLev + outRL * 0.35f * rLev * gateGain;
-            float r = mainR[i] + dr * eLev + outRR * 0.35f * rLev * gateGain;
+            float l = mainL[i] + dl * eLev + outRL * 0.35f * rLev;
+            float r = mainR[i] + dr * eLev + outRR * 0.35f * rLev;
             l = eqHighL.tick(eqLowL.tick(l)); r = eqHighR.tick(eqLowR.tick(r));
             // compressor (linked peak)
             const float pk = std::max(std::fabs(l), std::fabs(r));
@@ -315,7 +360,7 @@ public:
                 if (over > 0.f) gain *= std::pow(10.f, -over * (1.f - 1.f / ratio) / 20.f);
                 l *= gain; r *= gain;
             }
-            l = drive(l, drv) * vol; r = drive(r, drv) * vol;
+            l = drvL.process(l, drv) * vol; r = drvR.process(r, drv) * vol;
             outL[i] = safety(l); outR[i] = safety(r);
         }
     }
@@ -412,6 +457,10 @@ private:
     int revModel = -1;
     Biquad eqLowL, eqLowR, eqHighL, eqHighR;
     float cmpEnv = 0;
+    static constexpr int kModStep = 32;
+    float revModCur[8] = {}, revModInc[8] = {}; int revModCnt = 0;
+    double echoQuiet = 0.0, revQuiet = 0.0; bool echoAwake = true, revAwake = true;
+    DriveAA drvL, drvR;   // anti-aliased master DRIVE
 };
 
 } // namespace kn

@@ -109,6 +109,29 @@ inline float drive(float x, float amount) // amount 0..1
     return std::tanh(x * g) / std::tanh(g);
 }
 
+// the same soft clip with first-order antiderivative anti-aliasing (ADAA): the output is the average of tanh over
+// the segment between two input samples, which removes most of the aliasing of a plain tanh at high drive.
+// ADAA alone behaves like a two-sample average (-6 dB at 16 kHz), so the input is first lifted by a short
+// symmetric FIR that keeps the result flat within 1 dB up to ~14 kHz. One instance per channel; adds 1.5 samples
+// of delay while active.
+struct DriveAA {
+    double x1 = 0.0, x2 = 0.0, p1 = 0.0;
+    static constexpr double kLift = 0.16;
+    static inline double logCosh(double u) { const double a = std::fabs(u); return a + std::log1p(std::exp(-2.0 * a)) - 0.6931471805599453; }
+    inline float process(float x, float amount)
+    {
+        const double p = (1.0 + 2.0 * kLift) * x1 - kLift * ((double)x + x2);   // lifted input, centred on x1
+        x2 = x1; x1 = x;
+        const double p0 = p1; p1 = p;
+        if (amount <= 0.001f) return x;
+        const double g = 1.0 + amount * 9.0;
+        const double u0 = p0 * g, u1 = p * g, du = u1 - u0;
+        const double y = std::fabs(du) < 1e-5 ? std::tanh(0.5 * (u0 + u1)) : (logCosh(u1) - logCosh(u0)) / du;
+        return (float)(y / std::tanh(g));
+    }
+    void reset() { x1 = x2 = p1 = 0.0; }
+};
+
 inline float polyBlep(float t, float dt)
 {
     if (t < dt) { t /= dt; return t + t - t * t - 1.f; }

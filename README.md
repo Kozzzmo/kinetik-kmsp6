@@ -61,7 +61,7 @@ Run `make clean` when switching target systems.
 |---|---|
 | `src/` | the plugin: engine (`Engine.hpp`, `Voice.hpp`, `Dsp.hpp`), sequencer data (`Bank.hpp`), UI (`MonoUI.cpp`), plugin glue (`MonoPlugin.cpp`), presets, help texts, skins |
 | `scripts/dpfpatch.py` | small DPF patches: ignore stale host values after UI edits (Ableton), auxiliary output buses, resize fix |
-| `tests/` | offline engine tests (`g++ -O2 -std=c++17 tests/features.cpp && ./a.out`) |
+| `tests/` | offline engine tests (`g++ -O2 -std=c++17 tests/features.cpp && ./a.out`); `tests/regress.cpp` compares the sound of every factory preset with `tests/regress-ref.txt` |
 | `fonts/` | licences of the embedded fonts (SIL Open Font License) |
 | `LICENSE`, `THIRD_PARTY_NOTICES.txt` | proprietary licence; third-party licences to ship with the product |
 | `VERSION` | version number: pushing to `main` publishes the matching GitHub Release |
@@ -69,6 +69,8 @@ Run `make clean` when switching target systems.
 ## User data
 
 - User presets: `~/Library/Application Support/Kinetik/KMSP-6/Presets/*.kmsp` (Windows: `%APPDATA%\Kinetik\KMSP-6\Presets`)
+- Favourite presets: `favourites.txt` in the same folder
+- MIDI exports of patterns: `~/Documents/Kinetik/KMSP-6 MIDI/` (Windows: `%USERPROFILE%\Documents\Kinetik\KMSP-6 MIDI`)
 - Default skin and size: `~/Library/Preferences/KinetikKMSP6-view.txt`
 
 ## Licence

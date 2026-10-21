@@ -83,8 +83,43 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
 - Parameter names must stay readable and must not copy any hardware maker's abbreviations.
 - Bank text header `KMSP2` (`KMSP1` = 0.1 filter layout, locks converted on load); user preset header `KMSP6-PRESET 2` (v1 converted by `presetIndexV1` + `migrateFilterV1`).
 - Screenshots: `jackd -d dummy &`, `Xvfb :77 &`, run `bin/KinetikKMSP6` with DISPLAY=:77, `xdotool` to click, `import` to grab.
-- `Skins.hpp`, `Fonts.hpp` (embedded OFL fonts), `MasterFx.hpp` and `Dsp.hpp` are shared with the sister plugin
+- `Skins.hpp`, `Fonts.hpp` (embedded OFL fonts), `MasterFx.hpp`, `Dsp.hpp`, `FsUtf8.hpp`, `MidiFile.hpp`, `Updater.*`,
+  `License.hpp` and `tests/regress.cpp` are shared with the sister plugin
   (kinetik-kdsp16 ⇄ kinetik-kmsp6): keep them identical in both repositories.
+
+## Added in KDSP-16 0.10 / KMSP-6 0.5 (both plug-ins)
+
+- Undo/redo (`MonoUI.cpp`): stacks of `Snap` (values + serialized bank + label), depth 40. `setParam` / `sendCmd` call
+  `autoSnap` (coalesced: 1.2 s for knobs, 0.5 s for edits; `undoable()` skips live / transport commands);
+  `applyState` sets `restoring` so bulk changes are one step. Right-click UNDO = redo; Ctrl/Cmd+Z, Ctrl+Shift+Z, Ctrl+Y.
+- Tooltips: `tipAt(x, y)` text table, shown by `uiIdle` after 0.8 s of hover, hidden on click (`tipBlockUntil`).
+- Preset browser: `presetView` (filtered list of `PEntry`), tabs FACTORY / USER / FAVOURITES (`presetPage`), search
+  typed in the window (`presetType`), favourites in `<Presets folder>/favourites.txt` ("F name" factory, "U name"
+  user). MORPH slider (`morphBegin/morphDrag/morphApply`): base = sound when first moved; switch-like knobs
+  (`switchTrackParam` / `switchGlobal`: LFO wave/mode/dest/target/sync, or at most 12 distinct value texts) and the
+  machines (+ their synth knobs) change at 50 %; tempo, play, pattern never morph.
+- MIDI export (`exportMidi`, `MidiFile.hpp`, shared): the edited pattern over its master length to
+  `fs::exportDir("<product> MIDI")` (= Documents/Kinetik/...), then `upd::openFolder`. Conditions are not applied.
+- Track tools: `Pattern::rotateTrack` (shift buttons), COPY also keeps the sound (`soundClip`), right-click PASTE
+  pastes it; EUCLID / ROTATE on the TRACK page (`euclidSlot`, `applyEuclid`).
+- `FsUtf8.hpp` (shared): every file path is UTF-8; on Windows the helpers use the wide CRT. Use `fs::open`,
+  `fs::list`, `fs::makeDir`, `fs::remove`, `fs::env` — never fopen/opendir/getenv on user paths.
+- `DriveAA` (`Dsp.hpp`): ADAA tanh with a 3-tap lift (flat to 10 kHz), one per channel: track DRIVE (`Track::distAA`)
+  and master DRIVE (`MasterFx::drvL/drvR`). Voice-internal drives still use `drive()`.
+- `MasterFx` idle: echo / reverb stop when their sends are silent and the tail is below -120 dB (estimated from
+  feedback / decay); their buffers are cleared when they fall asleep. Reverb line modulation every 32 samples.
+- Unspecified evaluation order: never call a random generator twice in one function call's arguments
+  (`f(r.range(), r.range())`): gcc and clang evaluate them in opposite orders, so presets differed between Windows and macOS.
+- Sound regression: `tests/regress.cpp` (shared) fingerprints every factory preset against `tests/regress-ref.txt`
+  (1 dB tolerance; Linux CI strict, macOS report only). After an intended change of sound run
+  `./regress --write` from the repo root and say so in the commit.
+- Shared files: `scripts/check-shared.sh` checks them against `scripts/shared.sha256` (CI); after editing one,
+  copy it to the sister repo and run `scripts/check-shared.sh <sister repo>` to refresh both lists.
+- MIDI CC learn is not built in on purpose: every sound knob is a host parameter, so the host's own MIDI learn /
+  mapping works on all of them; a plug-in-side learn would fight host automation and DPF's CLAP wrapper cannot
+  report parameter changes made by the DSP.
+- MIDI expression (0.5): `Engine::midiBend/midiMod/midiPress` per track (routed like notes), bend ±2 st and mod-wheel
+  vibrato (5.5 Hz) added to the pitch in render, aftertouch opens the cutoff; `resetExpression()` on CC 121 / panic.
 
 ## Licences and demo mode
 

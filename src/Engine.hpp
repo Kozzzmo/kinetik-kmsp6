@@ -45,6 +45,7 @@ inline float noteHz(float n) { return 440.f * std::exp2((n - 69.f) / 12.f); }
 // ---------------------------------------------------------------------------
 struct Track {
     MonoVoice voice;
+    DriveAA distAA;   // anti-aliased track DRIVE
     float sr = 48000.f;
     // amplitude envelope (AHDSR)
     enum Stage { stIdle, stAttack, stHold, stDecay, stSustain, stRelease };
@@ -95,6 +96,11 @@ class Engine {
 public:
     float trackParam[kTracks][kTrackParams];
     float global[kGlobalParams];
+    // MIDI expression per track (set from the MIDI input): pitch bend in semitones (+-2), mod wheel 0..1 (vibrato),
+    // channel pressure 0..1 (opens the filter)
+    float midiBend[kTracks] = {}, midiMod[kTracks] = {}, midiPress[kTracks] = {};
+    float vibPh[kTracks] = {};
+    void resetExpression() { for (int t = 0; t < kTracks; ++t) { midiBend[t] = midiMod[t] = midiPress[t] = 0.f; } }
     Bank bank;
     bool fill = false;
     bool recording = false;          // REC armed in the UI
@@ -752,7 +758,8 @@ private:
         // filter: main multimode filter (CUTOFF / RESO / TYPE, envelope, key tracking) + a gentle LOW CUT
         const float kt = e[tpKEYTRK] / 127.f * (tr.curNote - 60.f) / 12.f;
         const float envOct = (e[tpFENV] - 64.f) / 64.f * 7.f * tr.fenv;
-        const float cutHz = 20.f * std::exp2(e[tpCUTOFF] / 127.f * 10.f + envOct + kt);
+        const float press = midiPress[noteSource(t)] * 3.f;   // aftertouch: up to 3 octaves brighter
+        const float cutHz = 20.f * std::exp2(e[tpCUTOFF] / 127.f * 10.f + envOct + kt + press);
         const float q = 0.5f + e[tpRESO] / 127.f * 17.f;
         const float lowHz = cutoffHz(e[tpLOWCUT]);
         tr.ftype = filterTypeIndex((int)e[tpFTYPE]);
@@ -840,7 +847,11 @@ private:
                 }
             }
             float* b = tr.buf.data();
-            tr.voice.render(b, (int)n, noteHz(n0 + tr.pitchMod + tr.uniDetune), noteHz(tr.curNote + tr.pitchMod + tr.uniDetune));
+            // MIDI pitch bend + mod wheel vibrato (5.5 Hz, up to half a semitone); LINK voices follow their first track
+            const int es = noteSource(t);
+            vibPh[t] += 5.5f * (float)n / sr; if (vibPh[t] >= 1.f) vibPh[t] -= 1.f;
+            const float expr = midiBend[es] + (midiMod[es] > 0.f ? midiMod[es] * 0.5f * std::sin(kTwoPi * vibPh[t]) : 0.f);
+            tr.voice.render(b, (int)n, noteHz(n0 + tr.pitchMod + tr.uniDetune + expr), noteHz(tr.curNote + tr.pitchMod + tr.uniDetune + expr));
             static const float kMachineGain[kMachines] = {0.f, 1.4f, 0.95f, 1.0f, 1.0f, 1.3f, 0.75f, 2.2f, 1.0f, 1.2f};
             const float mg = kMachineGain[machineOf(t) % kMachines];
             for (uint32_t i = 0; i < n; ++i) b[i] *= mg;
@@ -864,7 +875,7 @@ private:
                     }
                 }
                 s *= envBuf[i];
-                s = drive(s, tr.dist);
+                s = tr.distAA.process(s, tr.dist);
                 if (tr.amd > 0.f) {
                     tr.amPh += amInc; if (tr.amPh >= 1.f) tr.amPh -= 1.f;
                     s *= 1.f - tr.amd * (0.5f - 0.5f * std::sin(kTwoPi * tr.amPh));

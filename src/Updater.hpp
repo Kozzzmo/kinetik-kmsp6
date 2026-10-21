@@ -126,6 +126,7 @@ inline std::string sha512Hex(const std::string& data)
 // ---- system side (Updater.cpp)
 bool download(const std::string& url, const std::string& path, int timeoutSec);
 bool openPage(const std::string& url);
+bool openFolder(const std::string& path);   // shows a local folder in Explorer / Finder / the file manager
 // an older copy of this plug-in in the per-user plug-in folder, which hosts may load instead of the installed one
 // ("" if none). bin = file name without extension, e.g. "KinetikKMSP6".
 std::string strayCopy(const char* bin);
