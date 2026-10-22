@@ -63,8 +63,8 @@ struct Track {
     Biquad eq; float eqDb = 0;
     Svf hp, lp, lp2; bool hpOn = false, lpOn = false; int ftype = 0; float bpGain = 1.f;
     int srrN = 1, srrCnt = 0; float srrHold = 0;
-    float vol = 0, panL = 0.707f, panR = 0.707f, del = 0, rev = 0;
-    float cVol = 0, cPanL = 0.707f, cPanR = 0.707f, cDel = 0, cRev = 0;
+    float vol = 0, panL = 0.707f, panR = 0.707f, del = 0, rev = 0, cho = 0;
+    float cVol = 0, cPanL = 0.707f, cPanR = 0.707f, cDel = 0, cRev = 0, cCho = 0;
     float amd = 0, amf = 1, dist = 0;
     // lfos
     float lfoPh[3] = {}, lfoHeld[3] = {}, lfoRnd[3] = {};
@@ -147,7 +147,7 @@ public:
         for (auto& tr : tracks) tr.init(sr);
         for (int t = 0; t < kTracks; ++t) { tracks[t].voice.machine = -1; tracks[t].voice.setMachine(bank.machine[t]); }
         fx.init(sr);
-        sendDL.assign(64, 0); sendDR.assign(64, 0); sendRL.assign(64, 0); sendRR.assign(64, 0);
+        sendDL.assign(64, 0); sendDR.assign(64, 0); sendRL.assign(64, 0); sendRR.assign(64, 0); sendCL.assign(64, 0); sendCR.assign(64, 0);
         for (int b = 0; b < kOutBuses; ++b) { busL[b].assign(64, 0); busR[b].assign(64, 0); }
         events.reserve(4096);
         reset();
@@ -237,16 +237,20 @@ public:
                 events.push_back({toFrame(tb), 1, -1, 1.f, k, 0, 0});
                 lastBoundaryK = k;
             }
-            for (int t = 0; t < kTracks; ++t) {
-                for (int64_t k = kFirst; k <= kLast; ++k) {
+            for (int t = 0; t < kTracks; ++t) {   // each track on its own grid (SPEED: steps of sb / mult)
+                const double mult = trackSpeedMult(bank.kit[t][kfSpeed]), sbt = sb / mult;
+                const double maxMicroT = (double)kMicroMax / 24.0 * sbt;
+                const int64_t ktFirst = (int64_t)std::floor((b0 - std::fabs(swingOff) / sb * sbt - maxMicroT) / sbt) - 2;
+                const int64_t ktLast = (int64_t)std::floor((b1 + maxMicroT) / sbt) + 1;
+                for (int64_t k = ktFirst; k <= ktLast; ++k) {
                     if (k < 0) continue;
-                    const Pattern& P = patFor(k);
+                    const Pattern& P = patFor((int64_t)std::floor(k / mult + 1e-9));
                     const int s = P.trackStep(t, k);
                     if (!(P.flags[t][s] & sfTrig)) continue;
                     const int n = std::max<int>(1, P.ratch[t][s]);
-                    const double base = k * sb + ((k & 1) ? (P.swing / 100.0 * 2.0 - 1.0) * sb : 0.0) + P.micro[t][s] / 24.0 * sb;
+                    const double base = k * sbt + ((k & 1) ? (P.swing / 100.0 * 2.0 - 1.0) * sbt : 0.0) + P.micro[t][s] / 24.0 * sbt;
                     for (int j = 0; j < n; ++j) {
-                        const double tk = base + j * sb / n;
+                        const double tk = base + j * sbt / n;
                         if (tk < winStart || tk >= b1 || tk < -1e-9) continue;
                         events.push_back({toFrame(tk), 2, t, 1.f, k, j, 0});
                     }
@@ -254,6 +258,10 @@ public:
             }
             wasPlaying = true;
             prevB1 = b1;
+            {   // playhead in 1/24 steps (tracks with their own SPEED need a finer position than the step)
+                const int64_t f = (int64_t)std::floor((b1 - 1e-6) / sb * kFineSteps);
+                if (f >= 0) outStep = (int)(f % (32768 * kFineSteps));
+            }
             if (usingInternal) internalBeat = b1;
         }
         // order: note-offs, boundaries, sequencer trigs, note-ons
@@ -268,6 +276,7 @@ public:
             if (end <= pos) end = pos + 1;
             float* seg[2 * kOutBuses];
             for (int i = 0; i < 2 * kOutBuses; ++i) seg[i] = outs[i] + pos;
+            segPos = pos;
             renderSegment(seg, end - pos);
             pos = end;
         }
@@ -320,6 +329,7 @@ public:
         scale = bank.kit[s][kfScale]; root = bank.kit[s][kfRoot];
     }
     double stepSamples() const { return stepBeats() * 60.0 / curBpm * sr; }
+    double trackStepBeats(int t) const { return stepBeats() / trackSpeedMult(bank.kit[t][kfSpeed]); }
     bool isSounding(int t) const { return tracks[t].stage != Track::stIdle; }
 
 private:
@@ -337,12 +347,17 @@ private:
     Rng condRng;
 
     MasterFx fx;
+public:
+    void setGlitchHold(bool on) { fx.glHold.store(on ? 1 : 0); }
+    bool glitching() const { return fx.glitching(); }
+private:
     double lfoClock = 0;             // beat position used by tempo-synced LFOs
-    std::vector<float> sendDL, sendDR, sendRL, sendRR;
+    std::vector<float> sendDL, sendDR, sendRL, sendRR, sendCL, sendCR;
+    uint32_t segPos = 0;
     std::vector<float> busL[kOutBuses], busR[kOutBuses];
 
     // -----------------------------------------------------------------------
-    bool evalCond(Track& tr, int c, int64_t k, int len)
+    bool evalCond(Track& tr, int c, int64_t k, int len, int64_t startK)
     {
         if (c <= 0 || c >= kNumConds) return true;
         const CondDef& cd = kConds[c];
@@ -353,8 +368,8 @@ private:
         case ckNotFill: ok = !fill; break;
         case ckPre: ok = tr.pre; updates = false; break;
         case ckNotPre: ok = !tr.pre; updates = false; break;
-        case ckFirst: ok = (k - playStartK) / std::max(1, len) == 0; break;
-        case ckNotFirst: ok = (k - playStartK) / std::max(1, len) != 0; break;
+        case ckFirst: ok = (k - startK) / std::max(1, len) == 0; break;
+        case ckNotFirst: ok = (k - startK) / std::max(1, len) != 0; break;
         case ckRatio: { const int64_t it = (k >= 0 ? k : 0) / std::max(1, len); ok = (it % cd.b) == cd.a - 1; break; }
         default: break;
         }
@@ -371,7 +386,7 @@ private:
                 const int want = clampi((int)global[gPATTERN], 0, kPatterns - 1);
                 if (want != curPattern) curPattern = want;
             }
-            outStep = (int)(((e.k % 1048576) + 1048576) % 1048576);
+            outStep = (int)((((e.k % 32768) + 32768) % 32768) * kFineSteps);
             return;
         }
         if (e.kind == 3) { liveNoteOn(e.track, e.note, e.vel, frame); return; }
@@ -388,12 +403,12 @@ private:
         if (lm >= 0 && lm != t) return;          // the other tracks of a LINK group are voices: their own steps do not play
         if (e.sub == 0) {
             tr.decK = e.k;
-            tr.decOk = evalCond(tr, P.cond[t][s], e.k, P.trackLen[t]);
+            tr.decOk = evalCond(tr, P.cond[t][s], e.k, P.trackLen[t], (int64_t)std::ceil(playStartK * trackSpeedMult(bank.kit[t][kfSpeed]) - 1e-9));
         } else if (tr.decK != e.k) return;
         if (!tr.decOk || silenced(t)) return;
         const float acc = 1.f + P.accent / 127.f * 0.6f;
         const int n = std::max<int>(1, P.ratch[t][s]);
-        const double stepLen = stepSamples();
+        const double stepLen = stepSamples() / trackSpeedMult(bank.kit[t][kfSpeed]);
         double gate = kGateSteps[P.gate[t][s] % kGateCount] * stepLen;
         if (n > 1) gate = std::min(gate, stepLen / n * 0.8);
         // slide: glide into the note and keep the envelopes going
@@ -545,7 +560,7 @@ private:
         // live recording: write the note on the nearest step
         if (recording && blockPlaying) {
             const double beat = blockB0 + frame * blockBpf;
-            const int64_t k = (int64_t)std::llround(beat / stepBeats());
+            const int64_t k = (int64_t)std::llround(beat / trackStepBeats(t));
             const Pattern& P = bank.patterns[curPattern];
             pushRec({curPattern, t, P.trackStep(t, k), note, vel > 1.05f, -1});
             tr.recSkipK = k;
@@ -569,7 +584,7 @@ private:
         Track& tr = tracks[t];
         if (recording && blockPlaying && tr.recNote == note) {
             // store the held length as the step's gate (nearest available length)
-            const double held = (blockB0 + frame * blockBpf - tr.recBeat) / stepBeats();
+            const double held = (blockB0 + frame * blockBpf - tr.recBeat) / trackStepBeats(t);
             int best = 0;
             for (int g = 1; g < kGateCount; ++g)
                 if (std::fabs(kGateSteps[g] - held) < std::fabs(kGateSteps[best] - held)) best = g;
@@ -645,7 +660,7 @@ private:
         Track& mt = tracks[m];
         if (recording && blockPlaying) {
             const double beat = blockB0 + frame * blockBpf;
-            const int64_t k = (int64_t)std::llround(beat / stepBeats());
+            const int64_t k = (int64_t)std::llround(beat / trackStepBeats(m));
             const Pattern& P = bank.patterns[curPattern];
             pushRec({curPattern, m, P.trackStep(m, k), note, vel > 1.05f, -1});
             mt.recSkipK = k;
@@ -656,7 +671,7 @@ private:
     {
         Track& mt = tracks[m];
         if (recording && blockPlaying && mt.recNote == note) {
-            const double held = (blockB0 + frame * blockBpf - mt.recBeat) / stepBeats();
+            const double held = (blockB0 + frame * blockBpf - mt.recBeat) / trackStepBeats(m);
             int best = 0;
             for (int g = 1; g < kGateCount; ++g)
                 if (std::fabs(kGateSteps[g] - held) < std::fabs(kGateSteps[best] - held)) best = g;
@@ -760,7 +775,7 @@ private:
         const float envOct = (e[tpFENV] - 64.f) / 64.f * 7.f * tr.fenv;
         const float press = midiPress[noteSource(t)] * 3.f;   // aftertouch: up to 3 octaves brighter
         const float cutHz = 20.f * std::exp2(e[tpCUTOFF] / 127.f * 10.f + envOct + kt + press);
-        const float q = 0.5f + e[tpRESO] / 127.f * 17.f;
+        const float q = resoQ(e[tpRESO], 0.5f, 17.5f);
         const float lowHz = cutoffHz(e[tpLOWCUT]);
         tr.ftype = filterTypeIndex((int)e[tpFTYPE]);
         tr.hpOn = lowHz > 24.f;
@@ -778,6 +793,7 @@ private:
         const float pan = e[tpPAN] / 127.f;
         tr.panL = std::cos(pan * kPi * 0.5f); tr.panR = std::sin(pan * kPi * 0.5f);
         tr.del = e[tpDEL] / 127.f * 1.4f; tr.rev = e[tpREV] / 127.f * 1.4f;   // sends go above unity
+        tr.cho = global[gCHO_SEND + soundSource(t)] / 127.f * 1.4f;          // chorus send (a global parameter per track)
     }
 
     // envelope + sequencer gate + arpeggiator for one block
@@ -826,6 +842,7 @@ private:
         for (int b = 0; b < kOutBuses; ++b) { std::fill(busL[b].begin(), busL[b].begin() + n, 0.f); std::fill(busR[b].begin(), busR[b].begin() + n, 0.f); }
         std::fill(sendDL.begin(), sendDL.begin() + n, 0.f); std::fill(sendDR.begin(), sendDR.begin() + n, 0.f);
         std::fill(sendRL.begin(), sendRL.begin() + n, 0.f); std::fill(sendRR.begin(), sendRR.begin() + n, 0.f);
+        std::fill(sendCL.begin(), sendCL.begin() + n, 0.f); std::fill(sendCR.begin(), sendCR.begin() + n, 0.f);
         runLfos(n);
         lfoClock += blockBpf * n;
         const float inv = 1.f / n;
@@ -835,7 +852,7 @@ private:
             if (tr.stage != Track::stIdle) tr.idle = 0; else tr.idle += n;
             if (tr.idle > (uint32_t)(sr * 0.5f) || machineOf(t) == mOFF) continue;
             controlTrack(t, n);
-            if (tr.cVol == 0.f && tr.idle == 0) { tr.cVol = tr.vol; tr.cPanL = tr.panL; tr.cPanR = tr.panR; tr.cDel = tr.del; tr.cRev = tr.rev; }
+            if (tr.cVol == 0.f && tr.idle == 0) { tr.cVol = tr.vol; tr.cPanL = tr.panL; tr.cPanR = tr.panR; tr.cDel = tr.del; tr.cRev = tr.rev; tr.cCho = tr.cho; }
             advanceTrack(t, n, envBuf);
             // glide
             const float n0 = tr.curNote;
@@ -858,7 +875,7 @@ private:
             const int bus = std::min<int>(kOutBuses - 1, bank.kit[soundSource(t)][kfOut]);
             float* mL = busL[bus].data(); float* mR = busR[bus].data();
             const float dVol = (tr.vol - tr.cVol) * inv, dPL = (tr.panL - tr.cPanL) * inv, dPR = (tr.panR - tr.cPanR) * inv;
-            const float dDel = (tr.del - tr.cDel) * inv, dRev = (tr.rev - tr.cRev) * inv;
+            const float dDel = (tr.del - tr.cDel) * inv, dRev = (tr.rev - tr.cRev) * inv, dCho = (tr.cho - tr.cCho) * inv;
             const float amInc = tr.amf / sr;
             const bool eqOn = std::fabs(tr.eqDb) > 0.05f;
             for (uint32_t i = 0; i < n; ++i) {
@@ -882,16 +899,17 @@ private:
                 }
                 if (eqOn) s = tr.eq.tick(s);
                 if (tr.srrN > 1) { if (--tr.srrCnt <= 0) { tr.srrCnt = tr.srrN; tr.srrHold = s; } s = tr.srrHold; }
-                tr.cVol += dVol; tr.cPanL += dPL; tr.cPanR += dPR; tr.cDel += dDel; tr.cRev += dRev;
+                tr.cVol += dVol; tr.cPanL += dPL; tr.cPanR += dPR; tr.cDel += dDel; tr.cRev += dRev; tr.cCho += dCho;
                 s *= tr.cVol;
                 const float l = s * tr.cPanL, r = s * tr.cPanR;
                 mL[i] += l; mR[i] += r;
                 sendDL[i] += l * tr.cDel; sendDR[i] += r * tr.cDel;
                 sendRL[i] += l * tr.cRev; sendRR[i] += r * tr.cRev;
+                sendCL[i] += l * tr.cCho; sendCR[i] += r * tr.cCho;
             }
         }
         fx.process(global, (float)curBpm, busL[0].data(), busR[0].data(), sendDL.data(), sendDR.data(), sendRL.data(), sendRR.data(),
-                   outs[0], outs[1], n);
+                   sendCL.data(), sendCR.data(), blockB0 + segPos * blockBpf, blockPlaying, outs[0], outs[1], n);
         masterFilter(outs[0], outs[1], n);
         const float mv = global[gVOLUME] / 127.f; const float vol = mv * mv * 1.2f;
         for (int b = 1; b < kOutBuses; ++b)
@@ -907,7 +925,7 @@ private:
     {
         const bool hpOn = global[gMF_HP] > 0.5f, lpOn = global[gMF_LP] < 126.5f;
         if (!hpOn && !lpOn) { mfHpHz = 20.f; mfLpHz = 20000.f; for (auto* f : {&mfHp[0], &mfHp[1], &mfLp[0], &mfLp[1]}) f->reset(); return; }
-        const float q = 0.707f + global[gMF_RESO] / 127.f * 9.f;
+        const float q = resoQ(global[gMF_RESO], 0.707f, 9.707f);
         // glide the cutoffs a little per block (no zipper noise when turning the knobs)
         mfHpHz += (cutoffHz(global[gMF_HP]) - mfHpHz) * 0.35f;
         mfLpHz += (cutoffHz(global[gMF_LP]) - mfLpHz) * 0.35f;

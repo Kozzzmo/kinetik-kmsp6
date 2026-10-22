@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 extern char** environ;
 #endif
 #include "Updater.hpp"
@@ -187,6 +188,40 @@ bool openInstaller(const std::string& path)
     (void)path; return false;
 #endif
 }
+// silent install: Windows runs the NSIS installer with /S (UAC asks once); macOS runs the system installer through
+// an administrator prompt (the path is passed as an argument, never inside the script text)
+int runInstallerSilently(const std::string& path)
+{
+#ifdef _WIN32
+    const std::wstring file = widen(path);
+    SHELLEXECUTEINFOW ei = {};
+    ei.cbSize = sizeof(ei);
+    ei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC;
+    ei.lpVerb = L"open";
+    ei.lpFile = file.c_str();
+    ei.lpParameters = L"/S";
+    ei.nShow = SW_HIDE;
+    if (!ShellExecuteExW(&ei) || !ei.hProcess) return 1;          // includes "No" on the UAC prompt
+    if (WaitForSingleObject(ei.hProcess, 15 * 60 * 1000) == WAIT_TIMEOUT) { CloseHandle(ei.hProcess); return 1; }
+    DWORD code = 1; GetExitCodeProcess(ei.hProcess, &code);
+    CloseHandle(ei.hProcess);
+    return (int)code;
+#elif defined(__APPLE__)
+    std::vector<std::string> a = {"/usr/bin/osascript",
+        "-e", "on run argv",
+        "-e", "do shell script \"/usr/sbin/installer -pkg \" & quoted form of (item 1 of argv) & \" -target /\" with administrator privileges",
+        "-e", "end run", path};
+    std::vector<char*> argv; for (auto& s : a) argv.push_back(&s[0]); argv.push_back(nullptr);
+    pid_t pid = 0;
+    if (posix_spawn(&pid, "/usr/bin/osascript", nullptr, nullptr, argv.data(), environ) != 0) return 1;
+    int st = 0;
+    if (waitpid(pid, &st, 0) < 0) return 1;
+    return WIFEXITED(st) ? WEXITSTATUS(st) : 1;
+#else
+    (void)path; return 1;
+#endif
+}
+
 bool openFolder(const std::string& path)
 {
     if (path.empty()) return false;
@@ -228,9 +263,9 @@ bool openPage(const std::string& url)
 
 // ---- settings: <user data>/Kinetik/updates.txt ("auto 1", "last <time>", "skip-<product> <version>")
 struct Settings {
-    bool autoCheck = true;
+    bool autoCheck = true, autoInstall = true;
     long long last = 0;
-    std::string skip;
+    std::string skip, installed;
 };
 Settings loadSettings(const char* product)
 {
@@ -239,10 +274,13 @@ Settings loadSettings(const char* product)
     if (!readAll(dataDir() + "updates.txt", t, 65536)) return s;
     size_t pos = 0;
     const std::string skipKey = std::string("skip-") + product + " ", lastKey = std::string("last-") + product + " ";
+    const std::string instKey = std::string("installed-") + product + " ";
     while (pos < t.size()) {
         size_t e = t.find('\n', pos); if (e == std::string::npos) e = t.size();
         const std::string l = lic::trim(t.substr(pos, e - pos)); pos = e + 1;
         if (l.rfind("auto ", 0) == 0) s.autoCheck = l.substr(5) != "0";
+        else if (l.rfind("autoinstall ", 0) == 0) s.autoInstall = l.substr(12) != "0";
+        else if (l.rfind(instKey, 0) == 0) s.installed = l.substr(instKey.size());
         else if (l.rfind(lastKey, 0) == 0) s.last = std::atoll(l.c_str() + lastKey.size());
         else if (l.rfind(skipKey, 0) == 0) s.skip = l.substr(skipKey.size());
     }
@@ -254,14 +292,18 @@ void saveSettings(const char* product, const Settings& s)
     std::string t, out;
     readAll(dataDir() + "updates.txt", t, 65536);
     const std::string skipKey = std::string("skip-") + product + " ", lastKey = std::string("last-") + product + " ";
+    const std::string instKey = std::string("installed-") + product + " ";
     size_t pos = 0;
     while (pos < t.size()) {
         size_t e = t.find('\n', pos); if (e == std::string::npos) e = t.size();
         const std::string l = lic::trim(t.substr(pos, e - pos)); pos = e + 1;
-        if (l.empty() || l.rfind("auto ", 0) == 0 || l.rfind(skipKey, 0) == 0 || l.rfind(lastKey, 0) == 0) continue;
+        if (l.empty() || l.rfind("auto ", 0) == 0 || l.rfind("autoinstall ", 0) == 0 || l.rfind(skipKey, 0) == 0 ||
+            l.rfind(lastKey, 0) == 0 || l.rfind(instKey, 0) == 0) continue;
         out += l + "\n";
     }
     out += std::string("auto ") + (s.autoCheck ? "1" : "0") + "\n";
+    out += std::string("autoinstall ") + (s.autoInstall ? "1" : "0") + "\n";
+    if (!s.installed.empty()) out += instKey + s.installed + "\n";
     out += lastKey + std::to_string(s.last) + "\n";
     if (!s.skip.empty()) out += skipKey + s.skip + "\n";
 #ifdef _WIN32
@@ -275,24 +317,30 @@ void saveSettings(const char* product, const Settings& s)
 }
 
 // ---- checker
-Checker::~Checker() { if (worker.joinable()) worker.join(); }
+Checker::~Checker()
+{
+    if (!worker.joinable()) return;
+    if (sh->busy.load()) worker.detach();   // it keeps the shared block alive and ends on its own
+    else worker.join();
+}
 
-void Checker::startWork(void (*fn)(Checker*, bool), bool arg)
+void Checker::startWork(void (*fn)(Shared*, bool), bool arg)
 {
     if (worker.joinable()) worker.join();
-    busy.store(true);
-    worker = std::thread([this, fn, arg] { fn(this, arg); busy.store(false); });
+    sh->busy.store(true);
+    std::shared_ptr<Shared> keep = sh;
+    worker = std::thread([keep, fn, arg] { fn(keep.get(), arg); keep->busy.store(false); });
 }
 
 void Checker::check(bool force)
 {
-    if (busy.load()) return;
-    const Settings s = loadSettings(prod);
+    if (sh->busy.load()) return;
+    const Settings s = loadSettings(sh->prod);
     if (!force && (!s.autoCheck || (long long)std::time(nullptr) - s.last < 20 * 3600)) return;
     startWork(&Checker::doCheck, force);
 }
 
-void Checker::doCheck(Checker* c, bool force)
+void Checker::doCheck(Shared* c, bool force)
 {
     c->state.store(stChecking);
     Settings st = loadSettings(c->prod);
@@ -308,19 +356,53 @@ void Checker::doCheck(Checker* c, bool force)
     if (!m.valid) { c->setMsg("The update information is not valid."); c->state.store(force ? stFailed : stIdle); return; }
     { std::lock_guard<std::mutex> lk(c->mx); c->man = m; }
     const bool skipped = !force && st.skip == m.version;
-    c->state.store(newer(m.version, c->current) && !skipped ? stAvailable : stUpToDate);
+    if (!newer(m.version, c->current) || skipped) { c->state.store(stUpToDate); return; }
+    if (st.installed == m.version) {   // already installed (by another window): this copy is the old one still loaded
+        c->setMsg("installed"); c->state.store(stInstalled); return;
+    }
+    c->state.store(stAvailable);
+    if (!force && st.autoInstall && !m.url.empty()) doInstall(c, true);
 }
 
 void Checker::install()
 {
-    if (busy.load()) return;
+    if (sh->busy.load()) return;
     const Manifest m = manifest();
     if (!m.valid) return;
     if (m.url.empty()) { openPage(m.page); return; }   // no installer for this system: the download page
     startWork(&Checker::doInstall, false);
 }
 
-void Checker::doInstall(Checker* c, bool)
+// one install at a time across every open window and product instance (stale after 20 minutes)
+static bool takeInstallLock(const std::string& path)
+{
+#ifdef _WIN32
+    HANDLE h = CreateFileW(widen(path).c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        WIN32_FILE_ATTRIBUTE_DATA a;
+        if (GetFileAttributesExW(widen(path).c_str(), GetFileExInfoStandard, &a)) {
+            FILETIME now; GetSystemTimeAsFileTime(&now);
+            const unsigned long long t0 = ((unsigned long long)a.ftLastWriteTime.dwHighDateTime << 32) | a.ftLastWriteTime.dwLowDateTime;
+            const unsigned long long t1 = ((unsigned long long)now.dwHighDateTime << 32) | now.dwLowDateTime;
+            if (t1 > t0 && t1 - t0 > 20ull * 60 * 10000000ull) { removeFile(path); return takeInstallLock(path); }
+        }
+        return false;
+    }
+    CloseHandle(h);
+    return true;
+#else
+    const int fd = open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0600);
+    if (fd < 0) {
+        struct stat sb;
+        if (stat(path.c_str(), &sb) == 0 && std::time(nullptr) - sb.st_mtime > 20 * 60) { removeFile(path); return takeInstallLock(path); }
+        return false;
+    }
+    close(fd);
+    return true;
+#endif
+}
+
+void Checker::doInstall(Shared* c, bool automatic)
 {
     const Manifest m = c->manifest();
     c->state.store(stDownloading);
@@ -330,17 +412,32 @@ void Checker::doInstall(Checker* c, bool)
     if (!download(m.url, path, 600) || !readAll(path, data, 512u * 1024 * 1024)) { c->setMsg("The download failed."); c->state.store(stFailed); return; }
     if (sha512Hex(data) != m.sha512) { removeFile(path); c->setMsg("The download is damaged or not genuine: it was deleted."); c->state.store(stFailed); return; }
     data.clear();
+    // silent install first; if it is refused or fails, a manual click falls back to the installer window
+    const std::string lock = downloadDir() + "installing-" + c->prod + ".lock";
+    if (takeInstallLock(lock)) {
+        c->state.store(stInstalling);
+        const int rc = runInstallerSilently(path);
+        removeFile(lock);
+        if (rc == 0) {
+            Settings st = loadSettings(c->prod); st.installed = m.version; saveSettings(c->prod, st);
+            removeFile(path);
+            c->setMsg("installed"); c->state.store(stInstalled); return;
+        }
+    } else if (automatic) { c->state.store(stAvailable); return; }   // another window is installing it
+    if (automatic) { c->setMsg("The automatic installation was cancelled or failed."); c->state.store(stAvailable); return; }
     if (!openInstaller(path)) { c->setMsg("Could not open the installer."); c->state.store(stFailed); return; }
     c->state.store(stOpened);
 }
 
 void Checker::skipThisVersion()
 {
-    Settings s = loadSettings(prod); s.skip = manifest().version; saveSettings(prod, s);
-    state.store(stUpToDate);
+    Settings s = loadSettings(sh->prod); s.skip = manifest().version; saveSettings(sh->prod, s);
+    sh->state.store(stUpToDate);
 }
-bool Checker::autoCheck() const { return loadSettings(prod).autoCheck; }
-void Checker::setAutoCheck(bool on) { Settings s = loadSettings(prod); s.autoCheck = on; saveSettings(prod, s); }
+bool Checker::autoCheck() const { return loadSettings(sh->prod).autoCheck; }
+void Checker::setAutoCheck(bool on) { Settings s = loadSettings(sh->prod); s.autoCheck = on; saveSettings(sh->prod, s); }
+bool Checker::autoInstall() const { return loadSettings(sh->prod).autoInstall; }
+void Checker::setAutoInstall(bool on) { Settings s = loadSettings(sh->prod); s.autoInstall = on; saveSettings(sh->prod, s); }
 
 } // namespace upd
 } // namespace kn

@@ -91,7 +91,13 @@ struct MonoVoice {
         const float t = (shape - 0.5f) * 2.f;
         return pulse(p, dt, pw) * (1.f - t) + tri(p) * t;
     }
-    static inline float adv(float& p, float dt) { p += dt; if (p >= 1.f) { p -= 1.f; return 1.f; } return 0.f; }
+    static inline float adv(float& p, float dt)
+    {
+        p += dt;
+        if (p >= 1.f) { p -= 1.f; if (p >= 1.f || !(p >= 0.f)) p = p >= 1.f ? p - std::floor(p) : 0.f; return 1.f; }   // above Nyquist or NaN: stay in 0..1
+        if (!(p >= 0.f)) p = 0.f;
+        return 0.f;
+    }
     static inline float octMul(float x) { return std::exp2((float)((int)std::lround(x * 4.f) - 2)); }
     static inline float cents(float x) { return std::exp2((x - 0.5f) * 100.f / 1200.f); }
     inline float crush(float v, float amount)
@@ -110,7 +116,7 @@ struct MonoVoice {
         while (L < WaveBank::kLevels - 1 && (float)(1024 >> L) > maxH) ++L;
         const int f0 = std::max(0, std::min((int)frame, WaveBank::kFrames - 1)), f1 = std::min(f0 + 1, WaveBank::kFrames - 1);
         const float ft = clampf(frame - (float)f0, 0.f, 1.f);
-        const float pos = p * WaveBank::kSize;
+        const float pos = (p >= 0.f && p < 1.f ? p : 0.f) * WaveBank::kSize;   // never outside the table
         const int i = (int)pos; const float fr = pos - (float)i;
         const float* a = waves->table(f0, L); const float* b = waves->table(f1, L);
         const float va = a[i] + (a[i + 1] - a[i]) * fr, vb = b[i] + (b[i + 1] - b[i]) * fr;

@@ -101,6 +101,14 @@ struct OnePole {
     inline float hp(float x) { return x - lp(x); }
 };
 
+// RESONANCE knob (0..127) to filter Q: exponential (equal steps in dB of peak) with a slow start, so the
+// first half of the knob stays musical and the strong peak is at the top. qMin at 0, qMax at 127.
+inline float resoQ(float v127, float qMin, float qMax)
+{
+    const float x = clampf(v127 / 127.f, 0.f, 1.f);
+    return qMin * std::pow(qMax / qMin, std::pow(x, 1.25f));
+}
+
 // soft clip normalised so that |x|=1 stays ~1
 inline float drive(float x, float amount) // amount 0..1
 {

@@ -31,6 +31,18 @@ VIAddVersionKey "LegalCopyright" "All rights reserved"
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "French"
 
+; delete FILE, or rename it to FILE.<ticks>.old when a program has it loaded; $R8 = "1" if both fail
+!macro MoveAside FILE
+  IfFileExists "${FILE}" 0 +8
+  ClearErrors
+  Delete "${FILE}"
+  IfErrors 0 +5
+  ClearErrors
+  Rename "${FILE}" "${FILE}.$R9.old"
+  IfErrors 0 +2
+  StrCpy $R8 "1"
+!macroend
+
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${BIN}"
 
 Function .onInit
@@ -43,13 +55,18 @@ FunctionEnd
 
 Section "Install"
   SetRegView 64
-  ; an open music program keeps the old plug-in locked: ask to close it instead of leaving the old version in place
-  in_use:
-  ClearErrors
-  Delete "$COMMONFILES64\VST3\${BIN}.vst3\Contents\x86_64-win\${BIN}.vst3"
-  Delete "$COMMONFILES64\CLAP\${BIN}.clap"
-  IfErrors 0 not_in_use
-  MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "${PRODUCT} is in use. Close your music software, then click Retry." /SD IDCANCEL IDRETRY in_use
+  ; old plug-in files moved aside by an earlier update (deleted once no program has them open any more)
+  Delete "$COMMONFILES64\VST3\${BIN}.vst3\Contents\x86_64-win\*.old"
+  Delete "$COMMONFILES64\CLAP\${BIN}.clap.*.old"
+  ; an open music program keeps the plug-in loaded: it cannot be deleted, but it can be renamed. The host keeps
+  ; running the old code until it loads the plug-in again (next project / restart), then it gets the new one.
+  System::Call 'kernel32::GetTickCount() i .R9'
+  StrCpy $R8 "0"
+  !insertmacro MoveAside "$COMMONFILES64\VST3\${BIN}.vst3\Contents\x86_64-win\${BIN}.vst3"
+  !insertmacro MoveAside "$COMMONFILES64\CLAP\${BIN}.clap"
+  StrCmp $R8 "1" 0 not_in_use
+  MessageBox MB_OK|MB_ICONEXCLAMATION "${PRODUCT} is in use and could not be replaced. Close your music software and run the installer again." /SD IDOK
+  SetErrorLevel 3
   Abort "${PRODUCT} is in use: close your music software and run the installer again."
   not_in_use:
   SetOutPath "$COMMONFILES64\VST3\${BIN}.vst3"
@@ -72,6 +89,7 @@ SectionEnd
 
 Section "Uninstall"
   SetRegView 64
+  Delete "$COMMONFILES64\CLAP\${BIN}.clap.*.old"
   RMDir /r "$COMMONFILES64\VST3\${BIN}.vst3"
   Delete "$COMMONFILES64\CLAP\${BIN}.clap"
   Delete "$INSTDIR\EULA.txt"

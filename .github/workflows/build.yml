@@ -140,6 +140,20 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           name: Kinetik-KMSP6-Windows
+      - name: Update while a host has the plug-in loaded
+        shell: pwsh
+        run: |
+          $setup = (Get-Item .\Kinetik-KMSP6-Windows-Setup.exe).FullName
+          Start-Process -FilePath $setup -ArgumentList '/S' -Wait
+          $vst = "$env:CommonProgramFiles\VST3\KinetikKMSP6.vst3\Contents\x86_64-win\KinetikKMSP6.vst3"
+          Add-Type -Namespace W -Name K -MemberDefinition '[DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern IntPtr LoadLibraryW(string p);'
+          $h = [W.K]::LoadLibraryW($vst)
+          if ($h -eq [IntPtr]::Zero) { Write-Error "could not load the installed plug-in"; exit 1 }
+          $p = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Write-Error "silent update over a loaded plug-in failed (exit $($p.ExitCode))"; exit 1 }
+          if (!(Test-Path $vst)) { Write-Error "plug-in missing after the update"; exit 1 }
+          if (!(Get-ChildItem "$(Split-Path $vst)\*.old")) { Write-Error "the loaded plug-in was not moved aside"; exit 1 }
+          echo "::notice title=installer::silent update while the plug-in is loaded OK"
       - name: Silent install, check, uninstall
         shell: pwsh
         run: |
@@ -172,6 +186,7 @@ jobs:
           g++ -O2 -std=c++17 tests/presets.cpp -o /tmp/presets-test && mkdir -p out && /tmp/presets-test > /dev/null
           g++ -O2 -std=c++17 tests/features.cpp -o /tmp/features-test && /tmp/features-test
           g++ -O2 -std=c++17 tests/regress.cpp -o /tmp/regress-test && /tmp/regress-test   # sound of every factory preset
+          g++ -O2 -std=c++17 tests/speed.cpp -o /tmp/speed-test && /tmp/speed-test          # per-track SPEED
           ./scripts/check-shared.sh                                                  # files shared with the sister plug-in
       - name: Package
         run: |

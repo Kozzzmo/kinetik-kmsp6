@@ -17,6 +17,11 @@
 // matches. An installer is opened only if its SHA-512 matches the signed manifest, so a compromised download host
 // cannot make anyone install something else. Older or equal versions are never offered (no downgrade).
 // Downloads use the system's curl (macOS: /usr/bin/curl, Windows 10+: System32\curl.exe); no data is sent.
+//
+// Automatic install (setting "autoinstall", on by default): when a check finds a new version, the verified installer
+// runs silently (Windows: NSIS /S, one UAC prompt; macOS: /usr/sbin/installer through one administrator prompt).
+// The plug-in already loaded keeps running; the new version is used the next time the host loads it. A lock file
+// stops several open windows from installing at once, and "installed-<product>" remembers what was installed.
 #pragma once
 #include "License.hpp"
 #include <atomic>
@@ -24,6 +29,7 @@
 #include <mutex>
 #include <string>
 #include <cstdlib>
+#include <memory>
 
 extern "C" {
 #include "third_party/monocypher/monocypher.h"
@@ -127,42 +133,51 @@ inline std::string sha512Hex(const std::string& data)
 bool download(const std::string& url, const std::string& path, int timeoutSec);
 bool openPage(const std::string& url);
 bool openFolder(const std::string& path);   // shows a local folder in Explorer / Finder / the file manager
+int runInstallerSilently(const std::string& path);   // 0 = installed; waits for the end (up to 15 min)
 // an older copy of this plug-in in the per-user plug-in folder, which hosts may load instead of the installed one
 // ("" if none). bin = file name without extension, e.g. "KinetikKMSP6".
 std::string strayCopy(const char* bin);
 
-// ---- the checker: owned by the UI, all network / file work on its own thread
+// ---- the checker: owned by the UI, all network / file work on its own thread. The thread only touches a shared
+// state block, so closing the window during a download or an install never waits for it (the thread is detached).
 class Checker {
 public:
-    enum State { stIdle, stChecking, stAvailable, stUpToDate, stDownloading, stOpened, stFailed };
+    enum State { stIdle, stChecking, stAvailable, stUpToDate, stDownloading, stOpened, stFailed, stInstalling, stInstalled };
 
-    Checker(const char* product, const char* currentVersion, const char* manifestUrl)
-        : prod(product), current(currentVersion), url(manifestUrl) {}
+    Checker(const char* product, const char* currentVersion, const char* manifestUrl) : sh(std::make_shared<Shared>())
+    { sh->prod = product; sh->current = currentVersion; sh->url = manifestUrl; }
     ~Checker();
 
     void check(bool force);          // automatic check (at most every 20 h, if enabled) or forced
-    void install();                  // download the installer, verify it, open it (or open the page)
+    void install();                  // download the installer, verify it, install it silently (or open it / the page)
     void skipThisVersion();
     bool autoCheck() const;
     void setAutoCheck(bool on);
+    bool autoInstall() const;
+    void setAutoInstall(bool on);
 
-    State getState() const { return (State)state.load(); }
-    Manifest manifest() const { std::lock_guard<std::mutex> lk(mx); return man; }
-    std::string message() const { std::lock_guard<std::mutex> lk(mx); return msg; }
-    const char* currentVersion() const { return current; }
+    State getState() const { return (State)sh->state.load(); }
+    Manifest manifest() const { return sh->manifest(); }
+    std::string message() const { std::lock_guard<std::mutex> lk(sh->mx); return sh->msg; }
+    const char* currentVersion() const { return sh->current; }
+
+    struct Shared {
+        const char* prod = ""; const char* current = ""; const char* url = "";   // string literals
+        std::atomic<int> state{stIdle};
+        std::atomic<bool> busy{false};
+        mutable std::mutex mx;
+        Manifest man;
+        std::string msg;
+        Manifest manifest() const { std::lock_guard<std::mutex> lk(mx); return man; }
+        void setMsg(const char* m) { std::lock_guard<std::mutex> lk(mx); msg = m; }
+    };
 
 private:
-    void startWork(void (*fn)(Checker*, bool), bool arg);
-    static void doCheck(Checker* c, bool force);
-    static void doInstall(Checker* c, bool);
-    void setMsg(const char* m) { std::lock_guard<std::mutex> lk(mx); msg = m; }
+    void startWork(void (*fn)(Shared*, bool), bool arg);
+    static void doCheck(Shared* c, bool force);
+    static void doInstall(Shared* c, bool automatic);
 
-    const char* prod; const char* current; const char* url;
-    std::atomic<int> state{stIdle};
-    std::atomic<bool> busy{false};
-    mutable std::mutex mx;
-    Manifest man;
-    std::string msg;
+    std::shared_ptr<Shared> sh;
     std::thread worker;
 };
 

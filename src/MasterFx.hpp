@@ -1,4 +1,5 @@
-// Kinetik — master effects: echo (5 models), reverb (5 models), EQ, compressor, drive, safety limiter.
+// Kinetik — master effects: echo (5 models), reverb (5 models), chorus (3 models), glitch / beat repeat, EQ,
+// compressor, drive, safety limiter.
 // Shared by KDSP-16 and KMSP-6: keep this file identical in both repositories.
 // Uses the global parameter layout of Params.hpp (gECHO_TIME ... gREV_MOD), identical in both products.
 //
@@ -21,6 +22,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstring>
+#include <atomic>
 
 namespace kn {
 
@@ -39,6 +41,27 @@ inline int reverbModelValue(int i) { return (i * 128 + kReverbModels - 1) / kRev
 
 // return level of the echo / reverb: 0 .. about +10 dB above the old maximum (square law, 64 = unity-ish)
 inline float fxReturnGain(float v127) { const float x = clampf(v127 / 127.f, 0.f, 1.f); return 3.2f * x * x; }
+
+// chorus (send effect, its own return like echo and reverb)
+enum ChorusModel { cmChorus, cmEnsemble, cmFlanger, kChorusModels };
+static const char* const kChorusModelNames[kChorusModels] = {"CHORUS", "ENSEMBLE", "FLANGER"};
+static const char* const kChorusModelInfo[kChorusModels] = {
+    "classic stereo chorus: one moving voice per side",
+    "three voices per side with a fast shimmer: lush strings",
+    "short sweeping delay with feedback: jet sweep",
+};
+inline int chorusModelIndex(int v) { return clampMI(v * kChorusModels / 128, kChorusModels); }
+inline int chorusModelValue(int i) { return (i * 128 + kChorusModels - 1) / kChorusModels; }
+
+// glitch / beat repeat: grabs a slice of the mix and repeats it (tempo-synced)
+static constexpr int kGlSizes = 7, kGlLens = 5;
+static const float kGlSizeBeats[kGlSizes] = {1.f, 0.5f, 1.f / 3.f, 0.25f, 1.f / 6.f, 0.125f, 0.0625f};
+static const char* const kGlSizeNames[kGlSizes] = {"1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/64"};
+static const float kGlLenBeats[kGlLens] = {0.5f, 1.f, 2.f, 4.f, 8.f};
+static const char* const kGlLenNames[kGlLens] = {"1/8 BAR", "1/4 BAR", "1/2 BAR", "1 BAR", "2 BARS"};
+inline int glSizeIndex(int v) { return clampMI(v * kGlSizes / 128, kGlSizes); }
+inline int glLenIndex(int v) { return clampMI(v * kGlLens / 128, kGlLens); }
+inline float glPitchSemis(float v) { return std::round((v - 64.f) / 63.f * 12.f); }   // -12 .. +12 over one repeat event
 
 // one-line description of each model (help texts, LCD)
 static const char* const kEchoModelInfo[kEchoModels] = {
@@ -72,6 +95,8 @@ public:
         springLoop.assign((size_t)(sr * 0.12f) + 8, 0.f);
         shim.assign(4096, 0.f);
         preBuf.assign((size_t)(sr * 0.36f) + 4, 0.f);     // pre-delay (0.2 s) + early reflections (0.12 s)
+        choL.assign((size_t)(sr * 0.07f) + 8, 0.f); choR.assign(choL.size(), 0.f);
+        glL.assign((size_t)(sr * 4.f) + 8, 0.f); glR.assign(glL.size(), 0.f);   // one slice: up to a quarter note at 20 BPM
         revModel = -1;
         reset();
     }
@@ -85,13 +110,18 @@ public:
         echoLpL = echoLpR = echoHpL = echoHpR = echoLp2L = echoLp2R = 0.f;
         holdL = holdR = 0.f; holdCnt = 0; wowPh = flutPh = modPh = chorPh = 0.f; drift = driftT = 0.f; driftCnt = 0;
         echoDelay = 1000.f;
+        std::fill(choL.begin(), choL.end(), 0.f); std::fill(choR.begin(), choR.end(), 0.f);
+        choW = 0; choPh = choVib = choFbL = choFbR = choLpL = choLpR = choHpL = choHpR = 0.f; choQuiet = 0.0; choAwake = true;
+        glW = glStart = glPos = 0; glActive = false; glPrevBeat = glFreeBeat = 0.0; glLpL = glLpR = 0.f;
         for (int k = 0; k < 8; ++k) revModCur[k] = revModInc[k] = 0.f;
         revModCnt = 0; echoQuiet = revQuiet = 0.0; echoAwake = revAwake = true;
     }
 
     // g: global parameters; main/send buffers are mixed into out (main bus + echo + reverb, then master chain)
+    // beat0 = song position (beats) of the first frame, playing = transport running (the glitch follows the bars)
     void process(const float* g, float bpm, const float* mainL, const float* mainR,
                  const float* sendDL, const float* sendDR, const float* sendRL, const float* sendRR,
+                 const float* sendCL, const float* sendCR, double beat0, bool playing,
                  float* outL, float* outR, uint32_t n)
     {
         // ================= echo: per-model settings
@@ -195,6 +225,33 @@ public:
         const float drv = g[gDRIVE] / 127.f;
         const float mv = g[gVOLUME] / 127.f; const float vol = mv * mv * 1.2f;
 
+        // ================= chorus: per-model settings
+        const int cm = chorusModelIndex((int)g[gCHO_MODEL]);
+        const float cRate = expmap(g[gCHO_RATE] / 127.f, 0.05f, 8.f) * (cm == cmEnsemble ? 0.6f : 1.f);
+        const float cBaseMs = cm == cmFlanger ? expmap(g[gCHO_TIME] / 127.f, 0.3f, 6.f) : expmap(g[gCHO_TIME] / 127.f, 4.f, 30.f);
+        const float cDepthMs = g[gCHO_DEPTH] / 127.f * (cm == cmFlanger ? cBaseMs * 0.9f : std::min(cBaseMs * 0.8f, 9.f));
+        const float cBase = cBaseMs * 0.001f * sr, cDepth = cDepthMs * 0.001f * sr;
+        const float cFb = g[gCHO_FB] / 127.f * (cm == cmFlanger ? 0.92f : 0.6f);
+        const float cWidth = g[gCHO_WIDTH] / 127.f * 0.5f;          // phase offset of the right side: 0 .. half a cycle
+        const float cToneA = g[gCHO_TONE] >= 126.5f ? 0.f : std::exp(-kTwoPi * expmap(g[gCHO_TONE] / 127.f, 1200.f, 20000.f) / sr);
+        const float cLev = fxReturnGain(g[gCHO_LEV]);
+        const float cInc = cRate / sr, cVibInc = 6.3f / sr, cVib = cm == cmEnsemble ? 0.00012f * sr : 0.f;
+        const int cTaps = cm == cmEnsemble ? 3 : 1;
+        const float cHpA = std::exp(-kTwoPi * 150.f / sr);   // no lows into the chorus: a delayed bass cancels the dry one
+        const uint32_t csz = (uint32_t)choL.size();
+
+        // ================= glitch / beat repeat
+        const float glChance = g[gGL_CHANCE] / 127.f;
+        const bool hold = glHold.load(std::memory_order_relaxed) != 0;
+        const bool glOn = glChance > 0.f || hold || glActive;
+        const double bpf = (double)bpm / (60.0 * sr);
+        const double sliceBeats = kGlSizeBeats[glSizeIndex((int)g[gGL_SIZE])];
+        const double lenBeats = kGlLenBeats[glLenIndex((int)g[gGL_LEN])];
+        const float glSemis = glPitchSemis(g[gGL_PITCH]), glFade = g[gGL_FADE] / 127.f;
+        const float glRev = g[gGL_REV] / 127.f, glMix = g[gGL_MIX] / 127.f;
+        const double pBeat = glChance >= 1.f ? 1.0 : 1.0 - std::pow(1.0 - (double)glChance, 0.25);   // CHANCE is per bar
+        const uint32_t gsz = (uint32_t)glL.size();
+
         // ================= idle detection: echo and reverb sleep once their sends are silent and the tail has died
         // away below -120 dB (estimated from feedback / decay time). Their state is cleared when they fall asleep,
         // so a time or size change made while asleep never replays old audio.
@@ -214,6 +271,16 @@ public:
         }
         const double revTail = (double)psz + (double)ssz + rt * sr * 2.0 * (rm == rmShimmer ? 3.0 : 1.0) + 8192.0;
         const bool echoOn = echoQuiet <= echoTail, revOn = revQuiet <= revTail;
+        float pkC = 0.f;
+        for (uint32_t i = 0; i < n; ++i) pkC = std::max(pkC, std::max(std::fabs(sendCL[i]), std::fabs(sendCR[i])));
+        choQuiet = pkC > kQuiet ? 0.0 : choQuiet + n;
+        const double choRepeats = cFb < 1e-3f ? 1.0 : std::ceil(std::log(1e-6) / std::log((double)cFb));
+        const bool choOn = choQuiet <= (double)(cBase + cDepth + 64.f + cVib) * (choRepeats + 2.0);
+        if (!choOn && choAwake) {
+            std::fill(choL.begin(), choL.end(), 0.f); std::fill(choR.begin(), choR.end(), 0.f);
+            choFbL = choFbR = choLpL = choLpR = choHpL = choHpR = 0.f;
+        }
+        choAwake = choOn;
         if (!echoOn && echoAwake) {
             std::fill(echoL.begin(), echoL.end(), 0.f); std::fill(echoR.begin(), echoR.end(), 0.f);
             echoLpL = echoLpR = echoHpL = echoHpR = echoLp2L = echoLp2R = 0.f; holdL = holdR = 0.f;
@@ -347,8 +414,78 @@ public:
             outRL *= gateGain; outRR *= gateGain;
             }
 
-            float l = mainL[i] + dl * eLev + outRL * 0.35f * rLev;
-            float r = mainR[i] + dr * eLev + outRR * 0.35f * rLev;
+            // ---------------- chorus
+            float cl = 0.f, cr = 0.f;
+            if (choOn) {
+                choPh += cInc; if (choPh >= 1.f) choPh -= 1.f;
+                choVib += cVibInc; if (choVib >= 1.f) choVib -= 1.f;
+                choHpL = sendCL[i] + cHpA * (choHpL - sendCL[i]); choHpR = sendCR[i] + cHpA * (choHpR - sendCR[i]);
+                choL[choW] = (sendCL[i] - choHpL) + cFb * choFbL; choR[choW] = (sendCR[i] - choHpR) + cFb * choFbR;
+                const float vib = cVib > 0.f ? cVib * std::sin(kTwoPi * choVib) : 0.f;
+                float yl = 0.f, yr = 0.f;
+                for (int k = 0; k < cTaps; ++k) {
+                    float pl = choPh + (float)k / (float)cTaps; if (pl >= 1.f) pl -= 1.f;
+                    float pr = pl + cWidth; if (pr >= 1.f) pr -= 1.f;
+                    const float ml = cm == cmFlanger ? 2.f * std::fabs(2.f * pl - 1.f) - 1.f : std::sin(kTwoPi * pl);
+                    const float mr = cm == cmFlanger ? 2.f * std::fabs(2.f * pr - 1.f) - 1.f : std::sin(kTwoPi * pr);
+                    yl += readFrac(choL, csz, (float)choW - (cBase + cDepth * (0.5f + 0.5f * ml)) - vib);
+                    yr += readFrac(choR, csz, (float)choW - (cBase + cDepth * (0.5f + 0.5f * mr)) + vib);
+                }
+                yl /= (float)cTaps; yr /= (float)cTaps;
+                choFbL = std::tanh(yl); choFbR = std::tanh(yr);           // bounded feedback
+                if (cTaps > 1) { yl *= 1.8f; yr *= 1.8f; }
+                if (cToneA > 0.f) { choLpL = yl + cToneA * (choLpL - yl); choLpR = yr + cToneA * (choLpR - yr); yl = choLpL; yr = choLpR; }
+                if (++choW >= csz) choW = 0;
+                cl = yl * cLev; cr = yr * cLev;
+            }
+
+            float l = mainL[i] + dl * eLev + outRL * 0.35f * rLev + cl;
+            float r = mainR[i] + dr * eLev + outRR * 0.35f * rLev + cr;
+
+            // ---------------- glitch: repeats a slice of the mix (CHANCE per bar on the beats, or HOLD)
+            if (glOn) {
+                double beat;
+                if (playing) beat = beat0 + (double)i * bpf; else { glFreeBeat += bpf; beat = glFreeBeat; }
+                if (!glActive) {
+                    bool start = false;
+                    if (hold) start = std::floor(beat / sliceBeats) != std::floor(glPrevBeat / sliceBeats);
+                    else if (playing && glChance > 0.f && beat >= glPrevBeat && std::floor(beat) != std::floor(glPrevBeat))
+                        start = rng.uni() < pBeat;
+                    if (start) {
+                        glActive = true; glHoldEvt = hold; glStart = glW; glPos = 0; glRepeat = -1;
+                        glSlice = (uint32_t)std::max(64.0, std::min((double)gsz - 16.0, sliceBeats / bpf));
+                        glLen = hold ? 0xFFFFFFFFu : (uint32_t)std::max<double>(glSlice, lenBeats / bpf);
+                    }
+                }
+                if (!glActive || glPos < glSlice) { glL[glW] = l; glR[glW] = r; if (++glW >= gsz) glW = 0; }
+                if (glActive) {
+                    const uint32_t W = std::min<uint32_t>(96, glSlice / 4);
+                    if (glHoldEvt && !hold && glLen == 0xFFFFFFFFu) glLen = (glPos / glSlice + 1) * glSlice;   // released: end of this slice
+                    if (!glHoldEvt && !playing && glLen > glPos + W) glLen = glPos + W;                       // transport stopped
+                    const uint32_t nrep = glPos / glSlice, v = glPos - nrep * glSlice;
+                    if ((int)nrep != glRepeat) {
+                        glRepeat = (int)nrep;
+                        glRevNow = nrep > 0 && rng.uni() < glRev;
+                        const double nref = glHoldEvt ? 8.0 : std::max(1.0, (double)glLen / glSlice - 1.0);
+                        glRate = nrep == 0 ? 1.f : std::exp2(clampf((float)(glSemis * nrep / nref), -24.f, 24.f) / 12.f);
+                        glGain = std::pow(1.f - 0.6f * glFade, (float)nrep);
+                        const float fc = std::max(250.f, 18000.f * std::pow(1.f - 0.5f * glFade, (float)nrep));
+                        glLpA = nrep == 0 ? 0.f : std::exp(-kTwoPi * fc / sr);
+                    }
+                    float off = std::fmod((float)v * glRate, (float)glSlice);
+                    if (glRevNow) off = (float)glSlice - 1.f - off;
+                    float wl = readFrac(glL, gsz, (float)glStart + off), wr = readFrac(glR, gsz, (float)glStart + off);
+                    if (glLpA > 0.f) { glLpL = wl + glLpA * (glLpL - wl); glLpR = wr + glLpA * (glLpR - wr); wl = glLpL; wr = glLpR; }
+                    else { glLpL = wl; glLpR = wr; }
+                    float wnd = std::min(1.f, (float)(glSlice - v) / (float)W);
+                    if (nrep > 0) wnd = std::min(wnd, (float)v / (float)W);
+                    const float act = glLen == 0xFFFFFFFFu ? 1.f : std::min(1.f, (float)(glLen - glPos) / (float)W);
+                    const float m = glMix * act, wg = glGain * wnd;
+                    l = l * (1.f - m) + wl * wg * m; r = r * (1.f - m) + wr * wg * m;
+                    if (++glPos >= glLen) glActive = false;
+                }
+                glPrevBeat = beat;
+            } else glPrevBeat = playing ? beat0 + (double)i * bpf : glPrevBeat;
             l = eqHighL.tick(eqLowL.tick(l)); r = eqHighR.tick(eqLowR.tick(r));
             // compressor (linked peak)
             const float pk = std::max(std::fabs(l), std::fabs(r));
@@ -461,6 +598,14 @@ private:
     float revModCur[8] = {}, revModInc[8] = {}; int revModCnt = 0;
     double echoQuiet = 0.0, revQuiet = 0.0; bool echoAwake = true, revAwake = true;
     DriveAA drvL, drvR;   // anti-aliased master DRIVE
+    std::vector<float> choL, choR; uint32_t choW = 0;
+    float choPh = 0, choVib = 0, choFbL = 0, choFbR = 0, choLpL = 0, choLpR = 0, choHpL = 0, choHpR = 0; double choQuiet = 0.0; bool choAwake = true;
+    std::vector<float> glL, glR; uint32_t glW = 0, glStart = 0, glPos = 0, glSlice = 64, glLen = 0; int glRepeat = -1;
+    bool glActive = false, glHoldEvt = false, glRevNow = false; float glRate = 1.f, glGain = 1.f, glLpA = 0.f, glLpL = 0.f, glLpR = 0.f;
+    double glPrevBeat = 0.0, glFreeBeat = 0.0;
+public:
+    std::atomic<int> glHold{0};   // HOLD button (set by the plug-in from the UI command "gh 0/1")
+    bool glitching() const { return glActive; }
 };
 
 } // namespace kn

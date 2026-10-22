@@ -59,28 +59,35 @@ enum GlobalParam {
     gREV_SIZE, gREV_DAMP, gREV_GATE, gREV_HPF, gREV_PRE, gREV_LEV,
     gEQ_LOW, gEQ_HIGH, gCMP_THR, gCMP_RAT, gCMP_ATK, gCMP_REL, gDRIVE, gVOLUME,
     gECHO_MODEL, gECHO_MOD, gREV_MODEL, gREV_MOD,
-    gMF_HP, gMF_LP, gMF_RESO,          // master filter (KMSP-6 only, after the master FX)
-    gOUT_STEP, gOUT_LEDS, gOUT_PATTERN,
+    gMF_HP, gMF_LP, gMF_RESO,          // master filter (after the master FX)
+    gCHO_MODEL, gCHO_RATE, gCHO_DEPTH, gCHO_TIME, gCHO_FB, gCHO_WIDTH, gCHO_TONE, gCHO_LEV,   // chorus (send)
+    gGL_CHANCE, gGL_SIZE, gGL_LEN, gGL_PITCH, gGL_FADE, gGL_REV, gGL_MIX,              // glitch / beat repeat
+    gCHO_SEND,                         // + track: chorus send of each track (kTracks parameters)
+    gOUT_STEP = gCHO_SEND + kTracks, gOUT_LEDS, gOUT_PATTERN,
     kGlobalParams
 };
 static constexpr int kGlobalBase = kTracks * kTrackParams;
 static constexpr int kTotalParams = kGlobalBase + kGlobalParams;
 
 // master parameters gECHO_TIME .. gREV_MOD (index g - gECHO_TIME)
-static constexpr int kMasterCount = gMF_RESO - gECHO_TIME + 1;
+static constexpr int kMasterCount = gGL_MIX - gECHO_TIME + 1;
 static const char* const kMasterNames[kMasterCount] = {
     "TIME", "FEEDBACK", "HIGH CUT", "LOW CUT", "WIDTH", "LEVEL",
     "DECAY", "DAMPING", "GATE", "LOW CUT", "PRE-DELAY", "LEVEL",
     "LOW", "HIGH", "THRESH", "RATIO", "ATTACK", "RELEASE", "DRIVE", "VOLUME",
     "MODEL", "MOD", "MODEL", "MOD",
-    "HIGH PASS", "LOW PASS", "RESONANCE"
+    "HIGH PASS", "LOW PASS", "RESONANCE",
+    "MODEL", "RATE", "DEPTH", "TIME", "FEEDBACK", "WIDTH", "TONE", "LEVEL",
+    "CHANCE", "SIZE", "LENGTH", "PITCH", "FADE", "REVERSE", "MIX"
 };
 static const uint8_t kMasterDefaults[kMasterCount] = {
     86, 45, 100, 10, 64, 64,      // echo: 1/8D, distinct repeats (1/8T with feedback 50 blurred into a wash)
     60, 64, 0, 20, 10, 64,
     64, 64, 127, 40, 20, 50, 0, 100,
     0, 30, 52, 30,
-    0, 127, 0
+    0, 127, 0,
+    0, 30, 50, 40, 0, 100, 100, 64,
+    0, 70, 50, 64, 30, 0, 127
 };
 
 // ---- machines ----
@@ -123,10 +130,17 @@ inline const char* trackParamName(int machine, int p)
 
 // ---- kit settings (TRACK page + arpeggiator), stored with the kit, not host parameters ----
 // kfKeyTrk is kept for old banks only: key tracking is now the FILTER parameter KEY TRK.
-enum KitField { kfOut = 0, kfMidi, kfTrnsp, kfLegato, kfKeyTrk, kfArpMode, kfArpOct, kfArpSpd, kfArpChord, kfScale, kfRoot, kKitFields };
-static const char* const kKitNames[kKitFields] = {"OUTPUT", "MIDI CH", "PITCH", "LEGATO", "KEYTRK", "ARP", "OCTAVES", "SPEED", "CHORD", "SCALE", "ROOT"};
-static const int kKitMax[kKitFields] = {3, 16, 48, 1, 4, 5, 3, 5, 9, 15, 11};
-static const uint8_t kKitDefault[kKitFields] = {0, 0, 24, 0, 2, 0, 0, 1, 0, 0, 0};
+// output parameter out_step = song position in 1/kFineSteps of a pattern step, modulo 32768 steps (-1 = stopped)
+static constexpr int kFineSteps = 24;
+// per-track sequencer speed (kit field SPEED): the track's steps last 1 / mult of the pattern's steps
+static constexpr int kTrackSpeeds = 8;
+static const float kTrackSpeedMult[kTrackSpeeds] = {1.f, 2.f, 4.f, 1.5f, 0.75f, 0.5f, 0.25f, 0.125f};
+static const char* const kTrackSpeedNames[kTrackSpeeds] = {"1x", "2x", "4x", "3/2x", "3/4x", "1/2x", "1/4x", "1/8x"};
+inline float trackSpeedMult(int v) { return kTrackSpeedMult[v < 0 ? 0 : (v >= kTrackSpeeds ? kTrackSpeeds - 1 : v)]; }
+enum KitField { kfOut = 0, kfMidi, kfTrnsp, kfLegato, kfKeyTrk, kfArpMode, kfArpOct, kfArpSpd, kfArpChord, kfScale, kfRoot, kfSpeed, kKitFields };
+static const char* const kKitNames[kKitFields] = {"OUTPUT", "MIDI CH", "PITCH", "LEGATO", "KEYTRK", "ARP", "OCTAVES", "ARP SPEED", "CHORD", "SCALE", "ROOT", "SPEED"};
+static const int kKitMax[kKitFields] = {3, 16, 48, 1, 4, 5, 3, 5, 9, 15, 11, kTrackSpeeds - 1};
+static const uint8_t kKitDefault[kKitFields] = {0, 0, 24, 0, 2, 0, 0, 1, 0, 0, 0, 0};
 
 // scales: bit n set = semitone n above the root belongs to the scale
 static constexpr int kScales = 16;
@@ -194,6 +208,7 @@ inline const char* kitValueText(int field, int v, char* buf, int n)
     case kfArpMode: return kArpModes[v < 0 ? 0 : (v > 5 ? 5 : v)];
     case kfArpOct: std::snprintf(buf, n, "%d OCT", v + 1); return buf;
     case kfArpSpd: return kArpSpeedNames[v < 0 ? 0 : (v > 5 ? 5 : v)];
+    case kfSpeed: return kTrackSpeedNames[v < 0 ? 0 : (v >= kTrackSpeeds ? kTrackSpeeds - 1 : v)];
     default: return kChords[v < 0 ? 0 : (v > 9 ? 9 : v)].name;
     }
 }

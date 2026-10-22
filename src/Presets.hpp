@@ -550,6 +550,19 @@ inline void buildPreset(int i, float* values, Bank& bank)
 {
     PB b(values, bank);
     if (i >= 0 && i < kNumPresets) kPresets[i].build(b);
+    // the presets were voiced with the linear RESONANCE curve used before 0.11: convert their values (knobs and
+    // locks) to the exponential curve (resoQ) so they keep the same resonance
+    auto conv = [](float v, float qMin, float span) {
+        const float q = qMin + clampf(v, 0.f, 127.f) / 127.f * span;
+        const float e = std::log(q / qMin) / std::log((qMin + span) / qMin);
+        return std::round(127.f * std::pow(clampf(e, 0.f, 1.f), 0.8f));
+    };
+    for (int t = 0; t < kTracks; ++t) values[t * kTrackParams + tpRESO] = conv(values[t * kTrackParams + tpRESO], 0.5f, 17.f);
+    values[kGlobalBase + gMF_RESO] = conv(values[kGlobalBase + gMF_RESO], 0.707f, 9.f);
+    for (auto& pat : bank.patterns)
+        for (int t = 0; t < kTracks; ++t)
+            for (int st = 0; st < kSteps; ++st)
+                if (pat.locks[t][st][tpRESO] != kNoLock) pat.locks[t][st][tpRESO] = (uint8_t)conv(pat.locks[t][st][tpRESO], 0.5f, 17.f);
 }
 
 } // namespace kn

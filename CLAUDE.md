@@ -121,6 +121,27 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
 - MIDI expression (0.5): `Engine::midiBend/midiMod/midiPress` per track (routed like notes), bend ±2 st and mod-wheel
   vibrato (5.5 Hz) added to the pitch in render, aftertouch opens the cutoff; `resetExpression()` on CC 121 / panic.
 
+## Added in KDSP-16 0.11 / KMSP-6 0.6 (both plug-ins)
+
+- New globals (same order in both `Params.hpp`, before the outputs, so `MasterFx` indices match): `gMF_HP/LP/RESO`,
+  chorus `gCHO_MODEL..gCHO_LEV` (8), glitch `gGL_CHANCE..gGL_MIX` (7), then `gCHO_SEND + t` = one chorus send per track
+  (a global host parameter, not lockable). `gOUT_STEP = gCHO_SEND + kTracks`. Outputs moved (not automatable).
+- `MasterFx::process(..., sendCL, sendCR, beat0, playing, ...)`: chorus = send effect (CHORUS / ENSEMBLE / FLANGER,
+  150 Hz high-pass on its input, sleeps like echo / reverb); glitch on the summed mix before the EQ: a slice
+  (`kGlSizeBeats`) captured at a beat (chance per bar) or on HOLD (`glHold`, UI command `gh 0/1`, `Engine::setGlitchHold`)
+  is replayed for `kGlLenBeats` with pitch glide, fade + darkening, random reverse, crossfaded edges. Engines pass the
+  segment's song position (`blockB0 + segPos * blockBpf`).
+- UI master tabs: ECHO REVERB MASTER FILTER CHORUS GLITCH (+ LINK on KMSP), width from `kMPages`; `fxTabDots()` marks
+  active effects; GLITCH knob 8 = HOLD pad (`glHoldPad`, right-click latches); chorus send knob `choSlot(k)` / `dkChoSend`.
+- Per-track SPEED: kit field `kfSpeed` (index into `kTrackSpeedMult`, 0 = 1x). The sequencer runs each track on its own
+  grid (`sbt = sb / mult`; patterns still switch on the global grid; FIRST conditions use the track's start step).
+  `out_step` is now in 1/24 steps (`kFineSteps`, modulo 32768 steps); UI `fineStep()`, `absStep()`, `trackK(t)`.
+  Test: `tests/speed.cpp` (shared).
+- RESONANCE: `resoQ(v, qMin, qMax)` in `Dsp.hpp` (exponential, x^1.25) for track filters, master filter and the
+  filter graphic. Factory presets are converted in `buildPreset` (knob values and locks) so they sound as before.
+- Updates: silent automatic install (see Updates below).
+- KMSP-6 0.6 also: TRACK page = OUT MIDI PITCH LEGATO SCALE ROOT SPEED CHORUS; EUCLID / ROTATE moved to the ARP page (slots 7-8). `MonoVoice::adv` wraps phases above Nyquist (a CHORD voice could read outside the wave table).
+
 ## Licences and demo mode
 
 - `src/License.hpp` (identical in every Kinetik repo) verifies Ed25519-signed licence files with Monocypher
@@ -146,11 +167,19 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
   matches. Logo subtitle "UPDATE x AVAILABLE - CLICK"; logo click = update window (`ovUpdate`).
 - The release job signs `dist/update.txt` with `tools/sign_update.py` when the secret `KINETIK_UPDATE_KEY` (hex
   Ed25519 seed) exists, otherwise it only warns. The private key stays with the owner, never in a repository.
+- Automatic install (0.11 / 0.6, setting `autoinstall`, default on, toggle AUTO INSTALL in the update window): after a
+  check finds a newer version, `doInstall(automatic)` downloads + verifies it and runs `runInstallerSilently` (Windows:
+  NSIS `/S` via ShellExecuteEx, one UAC prompt; macOS: `osascript ... /usr/sbin/installer -pkg ... with administrator
+  privileges`, path passed as argv). Lock file `Updates/installing-<product>.lock` (20 min stale), `installed-<product>`
+  remembers it (other windows then show "UPDATED TO x - REOPEN TO USE IT"). The checker's thread only uses a
+  `shared_ptr<Shared>` block and is detached if the window closes mid-install. The NSIS installer renames a loaded
+  plug-in file to `<file>.<ticks>.old` (MoveAside macro) instead of failing; old files are deleted by the next install /
+  uninstall; CI `windows-install-test` updates over a DLL loaded with LoadLibrary.
 - `KN_VERSION` comes from `VERSION` (Makefile). Test: `tests/update.cpp` (links the two monocypher .c files).
 - Copies older than KDSP-16 0.9 / KMSP-6 0.4 have no update check.
 - The plug-in version (`getVersion`, bundle Info.plist) comes from `VERSION` via `KN_VER_MAJOR/MINOR/MICRO`
   (Makefile) — it was hard-coded once and macOS Installer then skipped the "unchanged" bundles. `make-pkg.sh` also
-  sets `BundleIsVersionChecked false`; the NSIS installer refuses to continue while the plug-in file is locked.
+  sets `BundleIsVersionChecked false`; the NSIS installer moves a locked (loaded) plug-in file aside.
   `upd::strayCopy` warns about old copies in the per-user plug-in folders.
 
 ## Packaging and signing

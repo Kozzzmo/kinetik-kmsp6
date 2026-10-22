@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.6.0
+
+- **Chorus** (new CHORUS tab in the master section): CHORUS, ENSEMBLE (three voices per side, lush) and FLANGER
+  models with RATE, DEPTH, TIME, FEEDBACK, WIDTH, TONE and LEVEL. Each track sends to it with its new CHORUS knob
+  (TRACK page, last knob); the lows are kept out of it so a bass or a kick is never hollowed out.
+- **Glitch / beat repeat** (new GLITCH tab): grabs a slice of the mix and repeats it in time. CHANCE (per bar, on the
+  beats), SIZE (1/4 to 1/64, triplets), LENGTH (1/8 bar to 2 bars), PITCH (repeats glide up or down to +-12
+  semitones), FADE (quieter and darker at each repeat), REVERSE (chance of backwards repeats), MIX. The HOLD pad
+  repeats while it is pressed (right-click = latch).
+- **SPEED per track** (TRACK page; EUCLID and ROTATE moved to the ARP page): 1x, 2x, 4x, 3/2x, 3/4x, 1/2x, 1/4x, 1/8x against the pattern, for polyrhythms,
+  half-time hats or double-time rolls. The step display, REC and the MIDI export follow it.
+- **Softer RESONANCE curve** on every filter (track filters and master filter): the knob is now exponential, the first
+  half stays musical (about 6 dB of peak at 50 % instead of 16-19 dB) and the full resonance is still at the top.
+  The factory presets were converted so they sound the same; user presets and projects keep their knob values, so
+  their resonance is now gentler.
+- **Automatic updates**: when a new version is found, it is downloaded, checked and installed by itself, without the
+  installer window (one system prompt: Yes on Windows, administrator password on macOS). Nothing stops while it
+  installs; the new version is used the next time the plug-in loads (reopen the project or restart the music
+  software). On Windows the update now works even while the music software has the plug-in open. AUTO INSTALL can be
+  turned off in the update window (logo click).
+- Fixed a crash risk when a CHORD voice was pushed above the audible range (found by the automatic tests).
+
 ## 0.5.0
 
 - **MIDI expression**: pitch bend (±2 semitones), mod wheel (vibrato) and channel aftertouch (brighter filter) now
