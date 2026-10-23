@@ -1,6 +1,7 @@
 // Kinetik KMSP-6 — factory presets (kit + patterns). All original material.
 #pragma once
 #include "Random.hpp"
+#include "FxPresets.hpp"
 #include <cstring>
 #include <algorithm>
 #include <cctype>
@@ -41,7 +42,7 @@ struct PB { // preset builder
         b.initDefault();
         for (int t = 0; t < kTracks; ++t)
             for (int p = 0; p < kTrackParams; ++p) tparam(v, t, p) = trackParamDefault(t, p);
-        for (int i = 0; i < kMasterCount; ++i) v[kGlobalBase + gECHO_TIME + i] = kMasterDefaults[i];
+        for (int g = gECHO_TIME; g < gOUT_STEP; ++g) v[kGlobalBase + g] = globalDefault(g);
         v[kGlobalBase + gTEMPO] = 120;
     }
     // machine + synth params (-1 keeps the machine default)
@@ -151,6 +152,22 @@ struct PB { // preset builder
         }
     }
     void copyPattern(int dst, int src) { b.patterns[dst] = b.patterns[src]; }
+    // morph scene a = the sound built so far, with some parameters changed ({index, value}; index = tpi(t, p) / gpi(g))
+    void scene(int a, std::initializer_list<std::pair<int, int>> changes)
+    {
+        b.scenes.set[a] = 1;
+        for (int t = 0; t < kTracks; ++t) b.scenes.mach[a][t] = b.machine[t];
+        for (int i = 0; i < kSceneValues; ++i) b.scenes.val[a][i] = (uint8_t)clampi((int)std::lround(v[i]), 0, 127);
+        for (const auto& c : changes) if (c.first >= 0 && c.first < kSceneValues) b.scenes.val[a][c.first] = (uint8_t)clampi(c.second, 0, 127);
+    }
+    static int tpi(int t, int p) { return t * kTrackParams + p; }
+    static int gpi(int g) { return kGlobalBase + g; }
+    void lane(int pat, std::initializer_list<int> vals)
+    {
+        int st = 0;
+        for (int x : vals) { if (st >= kSteps) break; b.patterns[pat].morph[st++] = x < 0 ? kNoLock : (uint8_t)clampi(x, 0, 127); }
+    }
+    void speed(int t, int sp) { b.kit[t][kfSpeed] = (uint8_t)sp; }   // index into kTrackSpeedMult
 };
 
 // gate indices: 0 1/8, 1 1/4, 2 1/2, 3 3/4, 4 1, 5 1.5, 6 2, 7 3, 8 4, 9 6, 10 8, 11 16
@@ -522,7 +539,97 @@ static void presetNoiseScapes(PB& b)
 }
 
 // --------------------------------------------------------------------------------------------
-struct PresetDef { const char* name; const char* desc; void (*build)(PB&); };
+
+// ---- 0.7: presets that show the scenes, CHAOS, chorus and per-track SPEED (voiced with the exponential RESONANCE)
+static void presetMorphAcid(PB& b)
+{
+    b.kit(0, mSAW, {0, 0, 64, 0, 64, 64, 0, 0}); b.amp(0, 0, 0, 45, 50, 20); b.flt2(0, 40, 70, 0, 0, 0, 50, 110);
+    b.fx(0, tpDIST, 30); b.fx(0, tpPORT, 22); b.fx(0, tpDEL, 25); b.fx(0, tpVOL, 92);
+    b.kit(1, mPULSE, {64, 30, 20, 0, 0, 20, 0, 0}); b.amp(1, 0, 0, 30, 0, 30); b.flt2(1, 70, 30, 0, 20, 0, 40, 80);
+    b.fx(1, tpDEL, 60); b.fx(1, tpPAN, 90);
+    b.g(gECHO_TIME, 54); b.g(gECHO_FB, 55);
+    b.seq(0, 0, "!A1 A1 ~A2 A1 | . A1 ~C2 !A1 | G1 . A1 ~E2 | A1 !A2 . ~G2");
+    b.seq(0, 1, ". . A3 . | . . C4 . | . . E4 . | . A3 . G3");
+    b.settings(0, 16, 56);
+    b.lane(0, {0, -1, -1, -1, 32, -1, -1, -1, 64, -1, -1, -1, 127, -1, -1, 96});
+    b.g(gTEMPO, 132);
+    b.scene(0, {{PB::tpi(0, tpCUTOFF), 30}, {PB::tpi(0, tpRESO), 50}, {PB::tpi(0, tpDIST), 15}, {PB::gpi(gECHO_LEV), 30}});
+    b.scene(1, {{PB::tpi(0, tpCUTOFF), 95}, {PB::tpi(0, tpRESO), 105}, {PB::tpi(0, tpDIST), 75}, {PB::tpi(0, tpFENV), 125},
+                {PB::gpi(gECHO_LEV), 90}, {PB::gpi(gECHO_FB), 80}});
+}
+static void presetEnsembleStrings(PB& b)
+{
+    b.kit(0, mCHORD, {20, 30, 60, 0, 30, 40, 10, 80}); b.amp(0, 70, 0, 80, 100, 85); b.flt2(0, 80, 15, 0, 20, 30, 60, 70);
+    b.fx(0, tpREV, 60); b.fx(0, tpVOL, 80);
+    b.kit(1, mSAW, {0, 0, 72, 64, 64, 64, 40, 0}); b.amp(1, 0, 0, 60, 70, 40); b.flt2(1, 55, 20, 0, 0, 0, 45, 75); b.fx(1, tpVOL, 92);
+    b.kit(2, mPLUCK, {70, 70, 50, 40, 10, 50, 40, 0}); b.amp(2, 0, 0, 70, 0, 50); b.fx(2, tpDEL, 50); b.fx(2, tpPAN, 30);
+    for (int t : {0, 2}) b.g(gCHO_SEND + t, 110);
+    b.g(gCHO_MODEL, chorusModelValue(cmEnsemble)); b.g(gCHO_RATE, 35); b.g(gCHO_DEPTH, 85); b.g(gCHO_LEV, 74);
+    b.g(gREV_SIZE, 85); b.g(gREV_MODEL, reverbModelValue(rmHall));
+    b.seq(0, 0, "C3 - - - | - - - - | Ab2 - - - | - - - - | Eb3 - - - | - - - - | Bb2 - - - | - - - -");
+    b.seq(0, 1, "C1 . . C2 | . . C1 . | Ab0 . . Ab1 | . . Ab0 . | Eb1 . . Eb2 | . . Eb1 . | Bb0 . . Bb1 | . . Bb0 .");
+    b.seq(0, 2, ". G4 . C5 | . Eb5 . G4 | . Ab4 . C5 | . Eb5 . Ab4 | . G4 . Bb4 | . Eb5 . G4 | . F4 . Bb4 | . D5 . F4");
+    b.settings(0, 32, 50);
+    b.g(gTEMPO, 92);
+}
+static void presetChaosArp(PB& b)
+{
+    b.kit(0, mFM, {32, 60, 64, 20, 10, 0, 40, 30}); b.amp(0, 0, 0, 30, 0, 30); b.arp(0, 3, 1, 1, 4); b.fx(0, tpDEL, 40);
+    b.kit(1, mSAW, {0, 0, 64, 0, 64, 64, 40, 0}); b.amp(1, 0, 0, 40, 50, 20); b.flt2(1, 45, 40, 0, 0, 0, 40, 95);
+    b.kit(2, mNOISE, {110, 40, 0, 0, 0, 0, 0, 0}); b.amp(2, 0, 0, 20, 0, 15); b.fx(2, tpVOL, 60);
+    for (int t = 0; t < kTracks; ++t) b.g(gCHA_SEND + t, 0);
+    b.g(gCHA_SEND + 0, 127); b.g(gCHA_SEND + 2, 100);
+    b.g(gGL_CHANCE, 40); b.g(gGL_SIZE, 92); b.g(gGL_LEN, 30); b.g(gGL_PITCH, 100); b.g(gGL_FADE, 20); b.g(gGL_REV, 40); b.g(gGL_MIX, 127);
+    b.seq(0, 0, "A3 . . . | C4 . . . | E3 . . . | G3 . . .");
+    b.seq(0, 1, "A1 . A1 . | . A1 . ~C2 | A1 . A1 . | . G1 . ~E1");
+    b.seq(0, 2, ". . X . | . . X . | . . X . | . X X .");
+    b.settings(0, 16, 54);
+    b.g(gTEMPO, 128);
+}
+static void presetSpeedPhase(PB& b)
+{
+    b.kit(0, mPLUCK, {75, 75, 50, 40, 10, 50, 40, 0}); b.amp(0, 0, 0, 60, 0, 40); b.fx(0, tpDEL, 40); b.fx(0, tpPAN, 20);
+    b.kit(1, mPLUCK, {75, 70, 40, 40, 10, 50, 40, 0}); b.amp(1, 0, 0, 60, 0, 40); b.fx(1, tpDEL, 40); b.fx(1, tpPAN, 108);
+    b.kit(2, mWAVE, {40, 30, 40, 64, 70, 40, 10, 0}); b.amp(2, 40, 0, 80, 90, 70); b.fx(2, tpREV, 60); b.fx(2, tpVOL, 70);
+    b.kit(3, mSAW, {0, 0, 64, 0, 64, 64, 50, 0}); b.amp(3, 0, 0, 60, 60, 30); b.flt2(3, 50, 20, 0, 0, 0, 40, 80);
+    b.seq(0, 0, "E4 B4 F#4 B4 | E5 D5 B4 F#4");
+    b.seq(0, 1, "E4 B4 F#4 B4 | E5 D5 B4 F#4"); b.speed(1, 3);   // the same line at 3/2x: phasing
+    b.seq(0, 2, "B3 - - - | - - - - | A3 - - - | - - - -"); b.speed(2, 5);
+    b.seq(0, 3, "E1 . . . | E1 . . . | D1 . . . | E1 . . .");
+    b.settings(0, 16, 50);
+    b.g(gTEMPO, 110);
+}
+static void presetMorphPad(PB& b)
+{
+    b.kit(0, mWAVE, {10, 20, 60, 64, 70, 50, 0, 0}); b.amp(0, 90, 0, 90, 110, 100); b.flt2(0, 70, 20, 0, 10, 40, 70, 64);
+    b.fx(0, tpREV, 80); b.fx(0, tpVOL, 80);
+    b.kit(1, mVOX, {30, 50, 30, 60, 20, 50, 30, 30}); b.amp(1, 80, 0, 90, 100, 100); b.fx(1, tpREV, 80); b.fx(1, tpVOL, 70);
+    b.g(gCHO_SEND + 0, 80); b.g(gCHO_SEND + 1, 80); b.g(gCHO_MODEL, chorusModelValue(cmEnsemble)); b.g(gCHO_LEV, 70);
+    b.g(gREV_SIZE, 100); b.g(gREV_MODEL, reverbModelValue(rmShimmer));
+    // a slow LFO on track 2 sweeps the MORPH: dark breathing pad <-> bright choir
+    b.lfo(1, 2, 5, 127, 1, 0, kDestMorph);
+    b.seq(0, 0, "D3 - - - | - - - - | - - - - | - - - - | F3 - - - | - - - - | - - - - | - - - -");
+    b.seq(0, 1, "A4 - - - | - - - - | - - - - | - - - - | C5 - - - | - - - - | - - - - | - - - -");
+    b.settings(0, 32, 50);
+    b.g(gTEMPO, 80);
+    b.scene(0, {{PB::tpi(0, 0), 5}, {PB::tpi(0, tpCUTOFF), 45}, {PB::tpi(1, tpVOL), 30}});
+    b.scene(1, {{PB::tpi(0, 0), 90}, {PB::tpi(0, tpCUTOFF), 105}, {PB::tpi(0, tpRESO), 50}, {PB::tpi(1, tpVOL), 100}, {PB::gpi(gREV_LEV), 90}});
+}
+static void presetGlitchBass(PB& b)
+{
+    b.kit(0, mPULSE, {40, 50, 40, 20, 0, 60, 0, 0}); b.amp(0, 0, 0, 40, 60, 20); b.flt2(0, 50, 60, 0, 0, 0, 35, 100);
+    b.fx(0, tpDIST, 50); b.fx(0, tpPORT, 15); b.fx(0, tpVOL, 92);
+    b.kit(1, mFM, {48, 80, 64, 40, 30, 1, 20, 10}); b.amp(1, 0, 0, 25, 0, 20); b.fx(1, tpDEL, 50);
+    for (int t = 0; t < kTracks; ++t) b.g(gCHA_SEND + t, 0);
+    b.g(gCHA_SEND + 0, 127);
+    b.g(gGL_CHANCE, 35); b.g(gGL_SIZE, 70); b.g(gGL_LEN, 30); b.g(gGL_PITCH, 30); b.g(gGL_FADE, 30); b.g(gGL_REV, 50); b.g(gGL_MIX, 127);
+    b.seq(0, 0, "!E1 . E1 ~G1 | . E1 . !B0 | E1 ~E2 . D2 | . B0 ~D1 .");
+    b.seq(0, 1, ". . . . | E4 . . . | . . . . | E4 . G4 .");
+    b.settings(0, 16, 58);
+    b.g(gTEMPO, 140);
+}
+
+struct PresetDef { const char* name; const char* desc; void (*build)(PB&); bool expReso = false; };   // expReso: voiced with the 0.6 curve
 
 static const PresetDef kPresets[] = {
     {"Init", "base parameters, empty sequencer", presetInit},
@@ -543,6 +650,12 @@ static const PresetDef kPresets[] = {
     {"Plucked Minimal", "strings, clicks and space", presetMinimal},
     {"Electro Funk", "sliding pulse bass, talking vox", presetElectroFunk},
     {"Noise Scapes", "pitched noise, grains and textures", presetNoiseScapes},
+    {"Morph Acid", "scenes A/B: the MORPH steps open and drive the acid line", presetMorphAcid, true},
+    {"Ensemble Strings", "chords through the ensemble chorus, hall, plucks", presetEnsembleStrings, true},
+    {"Chaos Arp", "FM arp repeated and pitched up by CHAOS, bass untouched", presetChaosArp, true},
+    {"Speed Phase", "the same pluck line at 1x and 3/2x drifting apart", presetSpeedPhase, true},
+    {"Morph Pad", "an LFO on MORPH turns a dark pad into a bright choir", presetMorphPad, true},
+    {"Glitch Bass", "CHAOS stutters and reverses the bass only", presetGlitchBass, true},
 };
 static constexpr int kNumPresets = (int)(sizeof(kPresets) / sizeof(kPresets[0]));
 
@@ -550,6 +663,7 @@ inline void buildPreset(int i, float* values, Bank& bank)
 {
     PB b(values, bank);
     if (i >= 0 && i < kNumPresets) kPresets[i].build(b);
+    if (i >= 0 && i < kNumPresets && kPresets[i].expReso) return;
     // the presets were voiced with the linear RESONANCE curve used before 0.11: convert their values (knobs and
     // locks) to the exponential curve (resoQ) so they keep the same resonance
     auto conv = [](float v, float qMin, float span) {

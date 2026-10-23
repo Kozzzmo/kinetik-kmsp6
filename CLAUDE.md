@@ -124,7 +124,7 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
 ## Added in KDSP-16 0.11 / KMSP-6 0.6 (both plug-ins)
 
 - New globals (same order in both `Params.hpp`, before the outputs, so `MasterFx` indices match): `gMF_HP/LP/RESO`,
-  chorus `gCHO_MODEL..gCHO_LEV` (8), glitch `gGL_CHANCE..gGL_MIX` (7), then `gCHO_SEND + t` = one chorus send per track
+  chorus `gCHO_MODEL..gCHO_LEV` (8), CHAOS (ex glitch) `gGL_CHANCE..gGL_MIX` (7), then `gCHO_SEND + t` = one chorus send per track
   (a global host parameter, not lockable). `gOUT_STEP = gCHO_SEND + kTracks`. Outputs moved (not automatable).
 - `MasterFx::process(..., sendCL, sendCR, beat0, playing, ...)`: chorus = send effect (CHORUS / ENSEMBLE / FLANGER,
   150 Hz high-pass on its input, sleeps like echo / reverb); glitch on the summed mix before the EQ: a slice
@@ -141,6 +141,30 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
   filter graphic. Factory presets are converted in `buildPreset` (knob values and locks) so they sound as before.
 - Updates: silent automatic install (see Updates below).
 - KMSP-6 0.6 also: TRACK page = OUT MIDI PITCH LEGATO SCALE ROOT SPEED CHORUS; EUCLID / ROTATE moved to the ARP page (slots 7-8). `MonoVoice::adv` wraps phases above Nyquist (a CHORD voice could read outside the wave table).
+
+## Added in KDSP-16 0.12 / KMSP-6 0.7 (both plug-ins)
+
+- New saved globals appended after the chorus sends (rule: saved host parameters never move, new ones go just before
+  `gOUT_STEP`): `gCHA_SEND + t` (CHAOS send per track, default 127), `gMF_ON` (default 1), `gMORPH`. Defaults of every
+  saved global: `globalDefault(g)` in `Params.hpp` (used by the UI, the engine and the preset builder).
+- `Scene.hpp` (shared): `Scenes` in the Bank (two sound snapshots, `uint8` 0..127 for every saved parameter + machines),
+  bank lines `Z a <hex> <hex>` / `Zc a`, pattern MORPH lane `Pattern::morph[step]` (`z p s v`, 255 = fader).
+  `Engine::process` wraps `processBlock`: `applyMorph()` blends trackParam / global between the scenes for the block and
+  restores them after (the knobs never change). Morph = fader, or the lane value on lane steps, + LFOs sent to MORPH;
+  switch-like params (`morphSwitch`) jump at 50 %; synth knobs of tracks whose machine differs are not morphed.
+- LFO destinations: `kDestOfBin` (bins of 4 values on KDSP, 3 on KMSP) keeps every pre-0.12 saved DEST value and adds
+  virtual destinations `kDestL1Rate..`, `kDestMorph` (KMSP also `kDestPitch`). LFO -> LFO and -> MORPH use the previous
+  block's LFO output (`lfoRateNext`, `lfoDepthNext`, `morphLfoNext`). Rate mod = +-2 octaves, depth mod = x0..x2.
+- CHAOS (MasterFx glitch) works on `sendGL/GR` (main-bus tracks x CHAOS send): the slice is taken from the sends and
+  the repeats replace the sent tracks' dry sound (`l += (repeat - send) * mix`).
+- UI: master tabs ECHO REVERB CHORUS CHAOS FILTER (LINK) MORPH MASTER; clicking the active tab opens `ovFx` (effect
+  presets, `FxPresets.hpp`, shared); FILTER knob 4 = ON pad (`mfOnPad`); MORPH tab = `drawMorphTab` / `morphTabClick`
+  (scene pads, fader `dkMFader`, lane `dkLane`); send knobs = `sendG(k)` (FX page); LFO rings = `lfoHits` /
+  `drawLfoRing` (UI-side LFO simulation `lfoUiValue`, repaint at 30 fps while visible). Presets window: TO SCENE A/B
+  (`presetToScene`), LOAD PATTERNS (`loadPresetPatterns`); sound loads bring the preset's scenes.
+- Factory presets: `PresetDef::expReso` = voiced with the exponential RESONANCE (skips the old-curve conversion);
+  builder helpers `scene()`, `lane()`, `speed()`, `tpi()`, `gpi()`. Tests: `tests/morph.cpp` (shared).
+- KMSP-6: the FILTER page has 10 knobs (`slots()`, `knob(k)` sized from it; loops over the track knobs go to 10).
 
 ## Licences and demo mode
 

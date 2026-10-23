@@ -10,6 +10,7 @@
 #include "License.hpp"
 #include "Updater.hpp"
 #include "MidiFile.hpp"
+#include "FxPresets.hpp"
 #include "MonoShared.hpp"
 #include "MasterFx.hpp"
 #include "Voice.hpp"
@@ -43,12 +44,12 @@ struct R {
 
 enum Page { pgSynth, pgAmp, pgFilter, pgEfx, pgLfo1, pgLfo2, pgLfo3, pgTrack, pgArp, kPages };
 static const char* const kPageNames[kPages] = {"SYNTH", "AMP", "FILTER", "FX", "LFO 1", "LFO 2", "LFO 3", "TRACK", "ARP"};
-enum MPage { mpEcho, mpReverb, mpMaster, mpFilter, mpChorus, mpGlitch, mpLink, kMPages };
+enum MPage { mpEcho, mpReverb, mpChorus, mpChaos, mpFilter, mpLink, mpMorph, mpMaster, kMPages };
 enum Mode { mdTrig, mdAccent, mdSlide, mdNote, mdLen, mdRatch, mdCond, mdTime, mdChord, kModes };
 static const char* const kModeNames[kModes] = {"TRIG", "ACCENT", "SLIDE", "NOTE", "LEN", "RATCH", "COND", "TIME", "CHORD"};
 
-enum DragKind { dkNone, dkTrackKnob, dkMasterKnob, dkTempo, dkSwing, dkAccent, dkKit, dkEuclid, dkStepNote, dkStepLen, dkKey, dkLink, dkMorph, dkChoSend, dkGlHold };
-enum Overlay { ovNone, ovPicker, ovPresets, ovHelp, ovSkins, ovSave, ovLicense, ovDest , ovUpdate};
+enum DragKind { dkNone, dkTrackKnob, dkMasterKnob, dkTempo, dkSwing, dkAccent, dkKit, dkEuclid, dkStepNote, dkStepLen, dkKey, dkLink, dkSend, dkGlHold, dkMFader, dkLane };
+enum Overlay { ovNone, ovPicker, ovPresets, ovHelp, ovSkins, ovSave, ovLicense, ovDest , ovUpdate, ovFx};
 enum DragExtra { dkResize = 100 };
 
 static const char* const kMachineShort[kMachines] = {
@@ -69,7 +70,7 @@ public:
         for (int i = 0; i < kTotalParams; ++i) values[i] = 0.f;
         for (int t = 0; t < kTracks; ++t)
             for (int p = 0; p < kTrackParams; ++p) values[t * kTrackParams + p] = trackParamDefault(t, p);
-        for (int i = 0; i < kMasterCount; ++i) values[kGlobalBase + gECHO_TIME + i] = kMasterDefaults[i];
+        for (int g = gECHO_TIME; g < gOUT_STEP; ++g) values[kGlobalBase + g] = globalDefault(g);
         values[kGlobalBase + gTEMPO] = 120;
         values[kGlobalBase + gOUT_STEP] = -1;
         bank.reset(new Bank());
@@ -261,13 +262,15 @@ protected:
         else setState("cmd", on ? "rec 1" : "rec 0");
     }
 
+    int slots() const { return page == pgFilter ? 10 : 8; }   // knobs on the current page
     int pageParam(int pg, int k) const
     {
+        if (k < 0 || k >= (pg == pgFilter ? 10 : 8)) return -1;
         switch (pg) {
         case pgSynth: return k;
         case pgAmp: return 8 + k;
-        case pgFilter: return 16 + k;
-        case pgEfx: return 24 + k;
+        case pgFilter: return k < 8 ? 16 + k : (k == 8 ? tpEQF : tpEQG);   // 10 knobs: the filter + the EQ
+        case pgEfx: { static const int f[8] = {tpAMD, tpAMF, tpSRR, tpDIST, tpDEL, tpREV, -1, -1}; return f[k & 7]; }   // 7-8: CHORUS / CHAOS sends
         case pgLfo1: return lfoParam(0, k);
         case pgLfo2: return lfoParam(1, k);
         case pgLfo3: return lfoParam(2, k);
@@ -276,7 +279,8 @@ protected:
     }
     int kitField(int k) const
     {
-        static const int trackFields[8] = {kfOut, kfMidi, kfTrnsp, kfLegato, kfScale, kfRoot, kfSpeed, -1};   // knob 8 = CHORUS send
+        static const int trackFields[8] = {kfOut, kfMidi, kfTrnsp, kfLegato, kfScale, kfRoot, kfSpeed, -1};
+        if (k < 0 || k >= 8) return -1;
         if (page == pgTrack) return trackFields[k & 7];
         if (page == pgArp) return k < 4 ? kfArpMode + k : -1;
         return -1;
@@ -285,9 +289,10 @@ protected:
     {
         if (mp == mpEcho) return k < 6 ? gECHO_TIME + k : (k == 6 ? gECHO_MODEL : gECHO_MOD);
         if (mp == mpReverb) return k < 6 ? gREV_SIZE + k : (k == 6 ? gREV_MODEL : gREV_MOD);
-        if (mp == mpFilter) return k < 3 ? gMF_HP + k : -1;
+        if (mp == mpFilter) return k < 3 ? gMF_HP + k : -1;   // knob 4 = ON / OFF pad
+        if (mp == mpMorph) return -1;                          // drawn by drawMorphTab
         if (mp == mpChorus) return gCHO_MODEL + k;
-        if (mp == mpGlitch) return k < 7 ? gGL_CHANCE + k : -1;   // knob 8 = HOLD pad
+        if (mp == mpChaos) return k < 7 ? gGL_CHANCE + k : -1;   // knob 8 = HOLD pad
         return gEQ_LOW + k;
     }
 
@@ -305,9 +310,15 @@ protected:
         return b;
     }
     // destination name of LFO l of track t (dest index d)
+    static const char* vdestName(int d)
+    {
+        static const char* n[] = {"PITCH", "LFO1 RATE", "LFO1 DEPTH", "LFO2 RATE", "LFO2 DEPTH", "LFO3 RATE", "LFO3 DEPTH", "MORPH"};
+        return d >= kLfoDests && d < kDestCount ? n[d - kLfoDests] : "-";
+    }
+    static int destAt(int c, int r) { return c < 4 ? c * 8 + r : kDestPitch + r; }   // column 5: PITCH, LFOs, MORPH
     std::string lfoDestName(int t, int l, int d) const
     {
-        if (d >= kLfoDests) return "PITCH";
+        if (d >= kLfoDests) return vdestName(d);
         const int trk = lfoTrackIndex((int)std::lround(values[t * kTrackParams + kLfoBase[l] + 5]));
         const int tt = trk == 0 ? t : trk - 1;
         return trackParamName(machineOf(tt), d);
@@ -413,9 +424,9 @@ protected:
     R machNext() const { return {310.f, 156.f, 26.f, 26.f}; }
     R lockClear() const { return {596.f, 156.f, 94.f, 24.f}; }
     R pageTab(int i) const { return {20.f + i * 75.5f, 304.f, 72.f, 28.f}; }
-    R knob(int k) const { return {20.f + k * 85.f, 340.f, 85.f, 120.f}; }
+    R knob(int k) const { const int n = slots(); if (k >= n) return {-1000.f, -1000.f, 0.f, 0.f}; const float w = 680.f / n; return {20.f + k * w, 340.f, w, 120.f}; }
     R mTab(int i) const { const float w = (448.f - (kMPages - 1) * 4.f) / kMPages; return {716.f + i * (w + 4.f), 146.f, w, 28.f}; }
-    R mKnob(int k) const { return {720.f + (k % 4) * 110.f, 178.f + (k / 4) * 102.f, 110.f, 100.f}; }
+    R mKnob(int k) const { if (k >= 8) return {-1000.f, -1000.f, 0.f, 0.f}; return {720.f + (k % 4) * 110.f, 178.f + (k / 4) * 102.f, 110.f, 100.f}; }
     R patBtn(int i) const { return {720.f + (i % 8) * 55.f, 432.f + (i / 8) * 30.f, 51.f, 26.f}; }
     R patCopy() const { return {946.f, 400.f, 68.f, 24.f}; }
     R patPaste() const { return {1018.f, 400.f, 68.f, 24.f}; }
@@ -469,12 +480,14 @@ protected:
     R presetBox() const { return {80.f, 80.f, 1020.f, 640.f}; }
     R presetTab(int i) const { return {300.f + i * 134.f, 96.f, 128.f, 32.f}; }
     R presetRow(int i) const { return {100.f + (i % 2) * 490.f, 140.f + (i / 2) * 43.f, 480.f, 40.f}; }
-    R presetSaveNew() const { return {100.f, 668.f, 170.f, 36.f}; }
-    R presetDelete() const { return {278.f, 668.f, 90.f, 36.f}; }
-    R presetMorph() const { return {380.f, 668.f, 260.f, 36.f}; }
-    R presetLoadAll() const { return {650.f, 668.f, 190.f, 36.f}; }
-    R presetLoadKit() const { return {848.f, 668.f, 150.f, 36.f}; }
-    R presetCancel() const { return {1006.f, 668.f, 74.f, 36.f}; }
+    R presetSaveNew() const { return {100.f, 668.f, 150.f, 36.f}; }
+    R presetDelete() const { return {256.f, 668.f, 80.f, 36.f}; }
+    R presetSceneA() const { return {342.f, 668.f, 110.f, 36.f}; }
+    R presetSceneB() const { return {458.f, 668.f, 110.f, 36.f}; }
+    R presetLoadAll() const { return {574.f, 668.f, 130.f, 36.f}; }
+    R presetLoadKit() const { return {710.f, 668.f, 130.f, 36.f}; }
+    R presetLoadPat() const { return {846.f, 668.f, 144.f, 36.f}; }
+    R presetCancel() const { return {996.f, 668.f, 84.f, 36.f}; }
     R presetSearchBox() const { return {716.f, 96.f, 364.f, 32.f}; }
     // save window
     R saveBox() const { return {290.f, 240.f, 600.f, 270.f}; }
@@ -749,6 +762,7 @@ protected:
         drawBottomBar();
         if (overlay == ovPicker) drawPicker();
         if (overlay == ovPresets) drawPresets();
+        if (overlay == ovFx) drawFxMenu();
         if (overlay == ovHelp) drawHelp();
         if (overlay == ovSkins) drawSkins();
         if (overlay == ovSave) drawSave();
@@ -1358,13 +1372,13 @@ protected:
         }
         label(bx.x + 26, 160, "TRACK", 10.f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
         const int tt = trk == 0 ? selTrack : trk - 1;
-        static const char* cols[5] = {"SYNTH", "AMP", "FILTER", "FX", "OTHER"};
+        static const char* cols[5] = {"SYNTH", "AMP", "FILTER", "FX", "PITCH / LFOS / MORPH"};
         for (int c = 0; c < 5; ++c) {
             label(destItem(c, 0).x, 232, cols[c], 10.f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
             for (int r = 0; r < 8; ++r) {
-                const int d = c < 4 ? c * 8 + r : (r == 0 ? kLfoDests : -1);
-                if (d < 0) continue;
-                const char* nm = d >= kLfoDests ? "PITCH" : trackParamName(machineOf(tt), d);
+                const int d = destAt(c, r);
+                if (d < 0 || d >= kDestCount) continue;
+                const char* nm = d >= kLfoDests ? vdestName(d) : trackParamName(machineOf(tt), d);
                 if (!std::strcmp(nm, "-")) continue;
                 button(destItem(c, r), nm, d == curD, 10.5f);
             }
@@ -1390,8 +1404,8 @@ protected:
             if (destTrackBtn(i).in(x, y)) { setTrackParamOrLock(lfoParam(l, 5), (float)lfoTrackValue(i)); repaint(); return true; }
         for (int c = 0; c < 5; ++c)
             for (int r = 0; r < 8; ++r) {
-                const int d = c < 4 ? c * 8 + r : (r == 0 ? kLfoDests : -1);
-                if (d < 0 || !destItem(c, r).in(x, y)) continue;
+                const int d = destAt(c, r);
+                if (d < 0 || d >= kDestCount || !destItem(c, r).in(x, y)) continue;
                 setTrackParamOrLock(lfoParam(l, 4), (float)lfoDestValue(d));
                 if (knobValueOf(lfoParam(l, 1)) < 0.5f) setTrackParamOrLock(lfoParam(l, 1), 40.f);   // make it audible
                 overlay = ovNone; repaint(); return true;
@@ -1439,12 +1453,12 @@ protected:
 
         for (int i = 0; i < kPages; ++i) button(pageTab(i), kPageNames[i], page == i, 11.f);
 
-        for (int k = 0; k < 8; ++k) {
+        for (int k = 0; k < 10; ++k) {
             const int pi = pageParam(page, k);
-            if (choSlot(k)) {
-                const float cv = choValue();
-                drawKnob(knob(k), cv / 127.f, "CHORUS", cv < 0.5f ? std::string("OFF") : std::to_string((int)std::lround(cv)), false,
-                         drag == dkChoSend && dragIndex == k, true);
+            if (sendG(k) >= 0) {
+                const float cv = sendValue(k);
+                drawKnob(knob(k), cv / 127.f, sendG(k) == gCHO_SEND ? "CHORUS" : "CHAOS", cv < 0.5f ? std::string("OFF") : std::to_string((int)std::lround(cv)), false,
+                         drag == dkSend && dragIndex == k, true);
                 continue;
             }
             if (euclidSlot(k)) {
@@ -1470,6 +1484,8 @@ protected:
             if (recNow) v = recVal;
             drawKnob(knob(k), v / 127.f, trackParamName(m, pi), valueText(selTrack, pi, v), locked || recNow,
                      drag == dkTrackKnob && dragIndex == k, true);
+            LfoHit hits[8]; const int nh = lfoHits(selTrack, pi, hits);
+            if (nh > 0) drawLfoRing(knob(k), hits, nh);
         }
     }
 
@@ -1535,15 +1551,17 @@ protected:
     void drawMaster()
     {
         panelBox({710, 140, 460, 344});
-        static const char* tabs[kMPages] = {"ECHO", "REVERB", "MASTER", "FILTER", "CHORUS", "GLITCH", "LINK"};
-        for (int i = 0; i < kMPages; ++i) button(mTab(i), tabs[i], mpage == i, 10.f);
+        static const char* tabs[kMPages] = {"ECHO", "REVERB", "CHORUS", "CHAOS", "FILTER", "LINK", "MORPH", "MASTER"};
+        for (int i = 0; i < kMPages; ++i) button(mTab(i), tabs[i], mpage == i, 9.5f);
         fxTabDots();
+        if (fxTabOf(mpage) >= 0) { const R t = mTab(mpage); label(t.x + t.w - 8, t.cy() + 1, "\xE2\x96\xBE", 9.f, th->selText, ALIGN_CENTER | ALIGN_MIDDLE, fnSans); }
         // a dot on FILTER / LINK when they are active
-        if (bank->glob.linkVoices >= 2 && mpage != mpLink) { const R t = mTab(mpLink); beginPath(); circle(t.x + t.w - 12, t.cy(), 3.5f); fillColor(th->accent); fill(); }
         if (mpage == mpLink) drawLink();
+        else if (mpage == mpMorph) drawMorphTab();
         else for (int k = 0; k < 8; ++k) {
             const int g = masterParam(mpage, k);
-            if (mpage == mpGlitch && k == 7) { drawHoldPad(); continue; }
+            if (mpage == mpChaos && k == 7) { drawHoldPad(); continue; }
+            if (mpage == mpFilter && k == 3) { drawOnPad(); continue; }
             if (g < 0) { drawKnob(mKnob(k), 0, "", "", false, false, false); continue; }
             const float v = gp(g);
             drawKnob(mKnob(k), v / 127.f, masterName(g), masterText(g, v), false,
@@ -1895,13 +1913,11 @@ protected:
         const bool ok = presetSel >= 0 && presetSel < n;
         button(presetSaveNew(), "SAVE CURRENT AS...", false, 10.5f);
         if (ok && presetView[presetSel].user) button(presetDelete(), deleteArmed ? "CONFIRM?" : "DELETE", deleteArmed, 10.5f);
-        const R m = presetMorph();
-        box(m, th->lcdBg); frame(m, th->btnEdge);
-        if (ok && morphPos > 0.f) { beginPath(); rect(m.x + 2, m.y + 2, (m.w - 4) * morphPos, m.h - 4); fillColor(Color(th->accent, th->lcdBg, 0.5f)); fill(); }
-        if (ok) std::snprintf(b, sizeof(b), "MORPH %d%%", (int)std::lround(morphPos * 100.f)); else std::snprintf(b, sizeof(b), "MORPH");
-        label(m.cx(), m.cy() + 1, b, 10.5f, ok ? th->lcdText : th->faint);
-        button(presetLoadAll(), "LOAD SOUND + PATTERNS", ok, 10.5f);
-        button(presetLoadKit(), "LOAD SOUND ONLY", false, 10.5f);
+        button(presetSceneA(), "TO SCENE A", false, 10.5f);
+        button(presetSceneB(), "TO SCENE B", false, 10.5f);
+        button(presetLoadAll(), "LOAD ALL", ok, 10.5f);
+        button(presetLoadKit(), "LOAD SOUND", false, 10.5f);
+        button(presetLoadPat(), "LOAD PATTERNS", false, 10.5f);
         button(presetCancel(), "CLOSE", false, 10.5f);
     }
 
@@ -1942,11 +1958,8 @@ protected:
         }
         if (presetSaveNew().in(x, y)) { openSave(); return; }
         const bool ok = presetSel >= 0 && presetSel < n;
-        if (ok && presetMorph().in(x, y)) {
-            morphBegin();
-            if (morphReady) { drag = dkMorph; morphDrag(x, true); }
-            repaint(); return;
-        }
+        if (ok && presetSceneA().in(x, y)) { presetToScene(0); repaint(); return; }
+        if (ok && presetSceneB().in(x, y)) { presetToScene(1); repaint(); return; }
         if (ok && presetView[presetSel].user && presetDelete().in(x, y)) {
             if (!deleteArmed) { deleteArmed = true; repaint(); return; }
             const PEntry e = presetView[presetSel];
@@ -1958,6 +1971,7 @@ protected:
         deleteArmed = false;
         if (ok && presetLoadAll().in(x, y)) { loadAnyPreset(presetSel, true); overlay = ovNone; }
         else if (ok && presetLoadKit().in(x, y)) { loadAnyPreset(presetSel, false); overlay = ovNone; }
+        else if (ok && presetLoadPat().in(x, y)) { loadPresetPatterns(presetSel); overlay = ovNone; }
         else if (presetCancel().in(x, y) || !presetBox().in(x, y)) overlay = ovNone;
         repaint();
     }
@@ -1971,11 +1985,8 @@ protected:
         morphReset();
     }
 
-    // ------------------------------------------------------------------ morph: current sound -> selected preset
-    // The base is the sound when the slider is first moved for this preset. Continuous knobs blend; switch-like
-    // knobs (types, waves, destinations, models) and, on tracks whose machine differs, the machine and its synth
-    // knobs change at 50 %. Tempo and patterns are never touched.
-    void morphReset() { morphPos = 0.f; morphReady = false; morphBase.clear(); morphTarget.clear(); morphKind.clear(); }
+    // ------------------------------------------------------------------ morph scenes (Scene.hpp)
+    void morphReset() {}
     bool readPresetSound(const PEntry& e, std::vector<float>& nv, Bank& mb)
     {
         nv.assign(values, values + kTotalParams);
@@ -2002,82 +2013,69 @@ protected:
         }
         return true;
     }
-    bool switchTrackParam(int t, int p) const
+    // the current sound (knobs + machines) as scene a, or a preset's sound
+    std::string sceneCommand(int a, const float* vals, const uint8_t* mach) const
     {
-        constexpr int nl = (int)(sizeof(kLfoBase) / sizeof(kLfoBase[0]));
-        for (int l = 0; l < nl; ++l)
-            for (int k = 2; k <= 6; ++k) if (p == lfoParam(l, k)) return true;   // WAVE MODE DEST TARGET SYNC
-        std::string seen[12]; int ns = 0;
-        for (int v = 0; v < 128; ++v) {
-            const std::string txt = valueText(t, p, (float)v);
-            bool f = false;
-            for (int j = 0; j < ns && !f; ++j) f = seen[j] == txt;
-            if (!f) { if (ns == 12) return false; seen[ns++] = txt; }
-        }
-        return true;
+        Scenes sc;
+        sc.set[a] = 1;
+        for (int t = 0; t < kTracks; ++t) sc.mach[a][t] = mach[t];
+        for (int i = 0; i < kSceneValues; ++i) sc.val[a][i] = (uint8_t)clampi((int)std::lround(vals[i]), 0, 127);
+        return sceneLine(sc, a);
     }
-    bool switchGlobal(int g) const
+    void captureScene(int a)
     {
-        if (g == gECHO_TIME || g == gECHO_MODEL || g == gREV_MODEL) return true;
-        std::string seen[12]; int ns = 0;
-        for (int v = 0; v < 128; ++v) {
-            const std::string txt = masterText(g, (float)v);
-            bool f = false;
-            for (int j = 0; j < ns && !f; ++j) f = seen[j] == txt;
-            if (!f) { if (ns == 12) return false; seen[ns++] = txt; }
-        }
-        return true;
-    }
-    void morphBegin()
-    {
-        if (morphReady) { snapshot("morph"); return; }
-        if (presetSel < 0 || presetSel >= presetCount()) return;
-        std::unique_ptr<Bank> mb(new Bank(*bank));
-        if (!readPresetSound(presetView[presetSel], morphTarget, *mb)) { presetMsg = "This preset cannot be morphed: load it and save it again."; return; }
-        morphBase.assign(values, values + kTotalParams);
-        morphKind.assign(kTotalParams, 0);
-        for (int t = 0; t < kTracks; ++t) {
-            morphMach[0][t] = bank->machine[t]; morphMach[1][t] = mb->machine[t];
-            const bool same = mb->machine[t] == bank->machine[t];
-            for (int p = 0; p < kTrackParams; ++p) {
-                const int i = t * kTrackParams + p;
-                if (p < 8 && !same) { morphKind[i] = 2; continue; }
-                if (morphBase[i] != morphTarget[i]) morphKind[i] = switchTrackParam(t, p) ? 2 : 1;
-            }
-        }
-        for (int g = 0; g < gOUT_STEP; ++g) {
-            if (g == gPLAY || g == gPATTERN || g == gTEMPO) continue;
-            const int i = kGlobalBase + g;
-            if (morphBase[i] != morphTarget[i]) morphKind[i] = switchGlobal(g) ? 2 : 1;
-        }
-        morphReady = true;
-        snapshot("morph");
-    }
-    void morphDrag(float x, bool force)
-    {
-        const R m = presetMorph();
-        morphPos = clampf((x - m.x - 2.f) / (m.w - 4.f), 0.f, 1.f);
-        if (!force && nowSec() - morphLast < 0.04) { repaint(); return; }   // at most 25 updates a second
-        morphApply();
-    }
-    void morphApply()
-    {
-        morphLast = nowSec();
-        if (!morphReady) return;
-        const bool wasRestoring = restoring; restoring = true;   // one undo step (taken in morphBegin)
-        for (int t = 0; t < kTracks; ++t) {
-            const int want = morphMach[morphPos < 0.5f ? 0 : 1][t];
-            if (bank->machine[t] != want) { char b[32]; std::snprintf(b, sizeof(b), "M %d %d", t, want); sendCmd(b); }
-        }
+        snapshot(a ? "scene B" : "scene A");
+        const bool wasRestoring = restoring; restoring = true;
+        sendCmd(sceneCommand(a, values, bank->machine));
         restoring = wasRestoring;
-        std::vector<float> nv(values, values + kTotalParams);
-        for (int i = 0; i < kTotalParams; ++i) {
-            if (!morphKind[i]) continue;
-            const float a = morphBase[i], b = morphTarget[i];
-            nv[i] = morphKind[i] == 2 ? (morphPos < 0.5f ? a : b) : a + (b - a) * morphPos;
-        }
-        applyState(nv.data(), nullptr);
+        repaint();
     }
+    void clearScene(int a)
+    {
+        snapshot(a ? "clear B" : "clear A");
+        const bool wasRestoring = restoring; restoring = true;
+        sendCmd(a ? "Zc 1" : "Zc 0");
+        restoring = wasRestoring;
+        repaint();
+    }
+    void presetToScene(int a)
+    {
+        if (presetSel < 0 || presetSel >= presetCount()) return;
+        std::vector<float> nv; std::unique_ptr<Bank> mb(new Bank(*bank));
+        if (!readPresetSound(presetView[presetSel], nv, *mb)) { presetMsg = "This preset cannot be read: load it and save it again."; return; }
+        snapshot(a ? "scene B" : "scene A");
+        const bool wasRestoring = restoring; restoring = true;
+        sendCmd(sceneCommand(a, nv.data(), mb->machine));
+        restoring = wasRestoring;
+        presetMsg = std::string("\"") + presetView[presetSel].name + "\" is now scene " + (a ? "B" : "A") + " (MORPH tab).";
+    }
+    // patterns of a preset only (the sound stays)
+    void loadPresetPatterns(int i)
+    {
+        if (i < 0 || i >= presetCount()) return;
+        const PEntry e = presetView[i];
+        std::unique_ptr<Bank> pb(new Bank());
+        int patIdx = 0;
+        if (!e.user) { std::vector<float> tmp(kTotalParams); buildPreset(e.idx, tmp.data(), *pb); }
+        else {
+            FILE* fp = fs::open(userPresetPath(e.name), "rb");
+            if (!fp) { presetMsg = "Could not open " + e.name; return; }
+            std::string all; char buf[4096]; size_t rd;
+            while ((rd = std::fread(buf, 1, sizeof(buf), fp)) > 0) all.append(buf, rd);
+            std::fclose(fp);
+            const size_t bankPos = all.find("\nBANK\n");
+            if (bankPos == std::string::npos || !deserializeBank(*pb, all.c_str() + bankPos + 6)) { presetMsg = "No patterns in " + e.name; return; }
+            const size_t pp = all.find("\nPATTERN ");
+            if (pp != std::string::npos && pp < bankPos) patIdx = std::atoi(all.c_str() + pp + 9);
+        }
+        snapshot("patterns");
+        std::unique_ptr<Bank> nb(new Bank(*bank));
+        for (int p = 0; p < kPatterns; ++p) nb->patterns[p] = pb->patterns[p];
+        applyState(values, nb.get());
+        setParamGesture(kGlobalBase + gPATTERN, (float)clampi(patIdx, 0, kPatterns - 1)); stepPg = 0;
+        clearSel();
+    }
+
 
     // ------------------------------------------------------------------ user presets (files)
     static std::string userDir()
@@ -2176,6 +2174,7 @@ protected:
                 std::memcpy(nb->machine, fileBank->machine, sizeof(nb->machine));
                 std::memcpy(nb->mute, fileBank->mute, sizeof(nb->mute));
                 std::memcpy(nb->solo, fileBank->solo, sizeof(nb->solo));   // no solo left over from before
+                nb->scenes = fileBank->scenes;
                 std::memcpy(nb->kit, fileBank->kit, sizeof(nb->kit));
                 if (v1) for (int t = 0; t < kTracks; ++t) migrateFilterV1(&nv[t * kTrackParams], fileBank->kit[t][kfKeyTrk]);
                 if (withPatterns) for (int p = 0; p < kPatterns; ++p) nb->patterns[p] = fileBank->patterns[p];
@@ -2813,9 +2812,10 @@ protected:
     float hovX = -1.f, hovY = -1.f; double hovSince = 0.0, tipBlockUntil = 0.0; bool tipShown = false, tipNone = false; std::string tipText;
     std::string tipAt(float x, float y)
     {
-        for (int k = 0; k < 8; ++k)
+        for (int k = 0; k < 10; ++k)
             if (knob(k).in(x, y)) {
-                if (choSlot(k)) return "CHORUS - how much of this track goes to the master chorus (CHORUS tab). Double-click: off.";
+                if (sendG(k) == gCHO_SEND) return "CHORUS - how much of this track goes to the master chorus (CHORUS tab). Double-click: off.";
+                if (sendG(k) == gCHA_SEND) return "CHAOS - how much of this track the CHAOS effect may grab and repeat (CHAOS tab). 0 = never repeated.";
                 if (euclidSlot(k)) return k == 6 ? "EUCLID - spreads this many hits evenly over the track. Replaces the trigs of the track (undo restores)."
                                                  : "ROTATE - moves the Euclidean rhythm later or earlier.";
                 if (kitField(k) >= 0) return std::string(kKitNames[kitField(k)]) + " - " + kKitHelp[kitField(k)];
@@ -2832,7 +2832,14 @@ protected:
                 if (g == gREV_MODEL || g == gREV_MOD) return std::string("Reverb ") + kReverbModelNames[reverbModelIndex((int)gp(gREV_MODEL))] + ": " + kReverbModelInfo[reverbModelIndex((int)gp(gREV_MODEL))];
                 return "";
             }
-        if (mpage == mpGlitch && glHoldPad().in(x, y)) return "HOLD: repeats the current slice while pressed. Right-click: latch on / off.";
+        if (mpage == mpMorph) {
+            for (int a = 0; a < 2; ++a) if (scenePad(a).in(x, y)) return std::string("SCENE ") + (a ? "B" : "A") + ": click = take the current sound (knobs + machines), right-click = empty. PRESETS > TO SCENE puts a preset here.";
+            if (morphFader().in(x, y)) return "MORPH: blends the sound from scene A to scene B (an empty scene = the knobs). Automate it in your music software, or send an LFO to MORPH.";
+            for (int i = 0; i < 16; ++i) if (laneBar(i).in(x, y)) return "MORPH STEPS: the morph position on each step of this pattern (drag up / down). Right-click: back to the fader.";
+        }
+        if (mpage == mpFilter && mfOnPad().in(x, y)) return "Master filter on / off.";
+        for (int i = 0; i < kMPages; ++i) if (mTab(i).in(x, y) && i == mpage && fxTabOf(i) >= 0) return "Click again: presets for this effect.";
+        if (mpage == mpChaos && glHoldPad().in(x, y)) return "HOLD: CHAOS repeats the current slice while pressed. Right-click: latch on / off.";
         for (int k = 0; k < 8; ++k)
             if (mKnob(k).in(x, y) && masterParam(mpage, k) >= 0) {
                 const int g = masterParam(mpage, k);
@@ -2910,9 +2917,9 @@ protected:
             if (drag == dkTempo) editParameter(kGlobalBase + gTEMPO, false);
             if (drag == dkSwing || drag == dkAccent) sendPatternSettings();
             if (drag == (DragKind)dkResize) saveView();
-            if (drag == dkChoSend) editParameter(kGlobalBase + gCHO_SEND + choTrack(), false);
+            if (drag == dkSend && sendG(dragIndex) >= 0) editParameter(kGlobalBase + sendG(dragIndex) + selTrack, false);
             if (drag == dkGlHold && !glLatch) glHoldSet(false);
-            if (drag == dkMorph) morphApply();
+            if (drag == dkMFader) editParameter(kGlobalBase + gMORPH, false);
             drag = dkNone; repaint();
             return true;
         }
@@ -2932,6 +2939,7 @@ protected:
             repaint(); return true;
         }
         if (overlay == ovPresets) { presetClick(x, y, dbl); return true; }
+        if (overlay == ovFx) { fxMenuClick(x, y); return true; }
         if (overlay == ovDest) return destClick(x, y);
         if (overlay == ovNone && page >= pgLfo1 && page <= pgLfo3 && lfoDestBox().in(x, y)) { openDestMenu(page - pgLfo1); return true; }
         if (overlay == ovHelp) { overlay = ovNone; repaint(); return true; }
@@ -3010,7 +3018,13 @@ protected:
             repaint(); return true;
         }
         for (int i = 0; i < kPages; ++i) if (pageTab(i).in(x, y)) { page = i; repaint(); return true; }
-        for (int i = 0; i < kMPages; ++i) if (mTab(i).in(x, y)) { mpage = i; repaint(); return true; }
+        for (int i = 0; i < kMPages; ++i)
+            if (mTab(i).in(x, y)) {
+                if (mpage == i && fxTabOf(i) >= 0) overlay = ovFx;   // click the active tab: its presets
+                else mpage = i;
+                repaint(); return true;
+            }
+        if (mpage == mpMorph && morphTabClick(x, y, right, dbl)) return true;
         if (mpage == mpLink)
             for (int k = 0; k < 5; ++k) {
                 if (!mKnob(k).in(x, y)) continue;
@@ -3028,15 +3042,16 @@ protected:
             char b[32]; std::snprintf(b, sizeof(b), "G %d %d", bank->glob.scale, v); sendCmd(b); repaint(); return true;
         }
 
-        for (int k = 0; k < 8; ++k)
-            if (choSlot(k) && knob(k).in(x, y)) {
-                const uint32_t idx = kGlobalBase + gCHO_SEND + choTrack();
-                if (dbl) { setParamGesture(idx, 0.f); repaint(); return true; }
-                drag = dkChoSend; dragIndex = k; dragY = y; dragStart = choValue();
+        for (int k = 0; k < 10; ++k)
+            if (sendG(k) >= 0 && knob(k).in(x, y)) {
+                const uint32_t idx = kGlobalBase + sendG(k) + selTrack;
+                if (dbl) { setParamGesture(idx, globalDefault(sendG(k) + selTrack)); repaint(); return true; }
+                drag = dkSend; dragIndex = k; dragY = y; dragStart = sendValue(k);
                 editParameter(idx, true);
                 repaint(); return true;
             }
-        if (mpage == mpGlitch && glHoldPad().in(x, y)) {
+        if (mpage == mpFilter && mfOnPad().in(x, y)) { setParamGesture(kGlobalBase + gMF_ON, gp(gMF_ON) > 0.5f ? 0.f : 1.f); repaint(); return true; }
+        if (mpage == mpChaos && glHoldPad().in(x, y)) {
             if (right) { glLatch = !glLatch; glHoldSet(glLatch); return true; }
             glLatch = false; glHoldSet(true); drag = dkGlHold; return true;
         }
@@ -3046,13 +3061,13 @@ protected:
                 drag = dkEuclid; dragIndex = k; dragY = y; dragStart = (float)(k == 6 ? eucHits : eucRot)[selTrack];
                 repaint(); return true;
             }
-        for (int k = 0; k < 8; ++k) {
+        for (int k = 0; k < 10; ++k) {
             if (!knob(k).in(x, y) || kitField(k) < 0) continue;
             if (dbl) { setKitGroup(kitField(k), kKitDefault[kitField(k)]); return true; }
             drag = dkKit; dragIndex = k; dragY = y; dragStart = bank->kit[selTrack][kitField(k)];
             repaint(); return true;
         }
-        for (int k = 0; k < 8; ++k) {
+        for (int k = 0; k < 10; ++k) {
             if (!knob(k).in(x, y) || pageParam(page, k) < 0) continue;
             const int pi = pageParam(page, k);
             if (dbl) {
@@ -3211,7 +3226,6 @@ protected:
             }
         }
         if (drag == dkNone) return false;
-        if (drag == dkMorph) { morphDrag(ev.pos.getX() / sx, false); return true; }
         if (drag == (DragKind)dkResize) {
             const double dx = ev.pos.getX() - grabX, dy = (ev.pos.getY() - grabY) * (double)W / H;
             const double nw = resizeStartW + (dx + dy) * 0.5;
@@ -3248,7 +3262,9 @@ protected:
             break;
         }
         case dkTrackKnob: setKnob(dragIndex, v); break;
-        case dkChoSend: setParam(kGlobalBase + gCHO_SEND + choTrack(), clampf(v, 0.f, 127.f)); repaint(); break;
+        case dkMFader: { const R f = morphFader(); setParam(kGlobalBase + gMORPH, clampf((ev.pos.getX() / sx - f.x) / f.w * 127.f, 0.f, 127.f)); repaint(); break; }
+        case dkLane: laneSet(ev.pos.getX() / sx, y); break;
+        case dkSend: if (sendG(dragIndex) >= 0) setParam(kGlobalBase + sendG(dragIndex) + selTrack, clampf(v, 0.f, 127.f)); repaint(); break;
         case dkEuclid: {
             const int n = tlen(selTrack);
             int nv = (int)std::lround(dragStart + (dragY - y) * 0.08f);
@@ -3293,9 +3309,9 @@ protected:
             repaint(); return true;
         }
         if (d == 0.f || overlay != ovNone) return false;
-        for (int k = 0; k < 8; ++k) {
-            if (knob(k).in(x, y) && choSlot(k)) {
-                setParamGesture(kGlobalBase + gCHO_SEND + choTrack(), clampf(choValue() + d, 0.f, 127.f)); repaint(); return true;
+        for (int k = 0; k < 10; ++k) {
+            if (knob(k).in(x, y) && sendG(k) >= 0) {
+                setParamGesture(kGlobalBase + sendG(k) + selTrack, clampf(sendValue(k) + d, 0.f, 127.f)); repaint(); return true;
             }
             if (knob(k).in(x, y) && euclidSlot(k)) {
                 const int n = tlen(selTrack);
@@ -3498,6 +3514,7 @@ protected:
 
     void uiIdle() override
     {
+        if (ringsShown && overlay == ovNone && nowSec() - lastRingPaint > 0.033) { lastRingPaint = nowSec(); ringsShown = false; repaint(); }
         if (!tipShown && !tipNone && drag == dkNone && overlay == ovNone && hovX >= 0.f && nowSec() - hovSince > 0.8 && nowSec() > tipBlockUntil) {
             tipText = tipAt(hovX, hovY);
             if (!tipText.empty()) { tipShown = true; repaint(); }
@@ -3534,14 +3551,23 @@ private:
     // ------------------------------------------------------------------ chorus send knob, glitch HOLD pad, tab dots
     bool glHoldUi = false, glLatch = false;
     R glHoldPad() const { const R k = mKnob(7); return {k.x + 14.f, k.y + 14.f, k.w - 28.f, k.h - 28.f}; }
+    R mfOnPad() const { const R k = mKnob(3); return {k.x + 14.f, k.y + 14.f, k.w - 28.f, k.h - 28.f}; }
     void glHoldSet(bool on) { if (on == glHoldUi) return; glHoldUi = on; sendCmd(on ? "gh 1" : "gh 0"); repaint(); }
     void fxTabDots()
     {
         bool cho = false;
         for (int t = 0; t < kTracks; ++t) cho |= gp(gCHO_SEND + t) > 0.5f;
-        const bool on[kMPages] = {false, false, false, gp(gMF_HP) > 0.5f || gp(gMF_LP) < 126.5f, cho, gp(gGL_CHANCE) > 0.5f || glHoldUi, false};
+        const bool on[kMPages] = {false, false, cho, gp(gGL_CHANCE) > 0.5f || glHoldUi, gp(gMF_ON) > 0.5f && (gp(gMF_HP) > 0.5f || gp(gMF_LP) < 126.5f), bank->glob.linkVoices >= 2, bank->scenes.active(), false};
         for (int i = 0; i < kMPages; ++i)
             if (on[i] && mpage != i) { const R t = mTab(i); beginPath(); circle(t.x + t.w - 8, t.cy(), 3.f); fillColor(th->accent); fill(); }
+    }
+    void drawOnPad()
+    {
+        const R p = mfOnPad();
+        const bool on = gp(gMF_ON) > 0.5f;
+        if (on) box(p, th->selFill); else { box(p, th->btnFill); frame(p, th->btnEdge, -1.f, 1.5f); }
+        label(p.cx(), p.cy() - 6, on ? "ON" : "OFF", 13.f, on ? th->selText : th->btnText);
+        label(p.cx(), p.cy() + 13, "filter", 9.f, on ? th->selText : th->dim);
     }
     void drawHoldPad()
     {
@@ -3550,9 +3576,192 @@ private:
         label(p.cx(), p.cy() - 6, "HOLD", 13.f, glHoldUi ? th->selText : th->btnText);
         label(p.cx(), p.cy() + 13, glLatch ? "LATCHED" : "press", 9.f, glHoldUi ? th->selText : th->dim);
     }
-    int choTrack() const { return selTrack; }
-    float choValue() const { return gp(gCHO_SEND + choTrack()); }
-    bool choSlot(int k) const { return page == pgTrack && k == 7; }
+    // per-track send knobs that are global host parameters (gCHO_SEND + t, gCHA_SEND + t): base index or -1
+    int sendG(int k) const
+    {
+        if (page != pgEfx) return -1;
+        return k == 6 ? gCHO_SEND : (k == 7 ? gCHA_SEND : -1);
+    }
+    float sendValue(int k) const { return gp(sendG(k) + selTrack); }
+
+    // ------------------------------------------------------------------ MORPH tab: scenes A / B, fader, step lane
+    R scenePad(int a) const { return {a ? 1066.f : 724.f, 186.f, 92.f, 78.f}; }
+    R morphFader() const { return {832.f, 214.f, 216.f, 30.f}; }
+    R laneBar(int i) const { return {724.f + i * 27.5f, 300.f, 23.f, 74.f}; }
+    void drawMorphTab()
+    {
+        for (int a = 0; a < 2; ++a) {
+            const R p = scenePad(a);
+            const bool set = bank->scenes.set[a] != 0;
+            if (set) box(p, th->selFill); else { box(p, th->btnFill); frame(p, th->btnEdge, -1.f, 1.5f); }
+            label(p.cx(), p.y + 26, a ? "SCENE B" : "SCENE A", 12.f, set ? th->selText : th->btnText);
+            label(p.cx(), p.y + 50, set ? "SET" : "EMPTY", 9.5f, set ? th->selText : th->dim);
+            label(p.cx(), p.y + 64, set ? "click = retake" : "click = take", 8.5f, set ? th->selText : th->faint);
+        }
+        const R f = morphFader();
+        const float m = gp(gMORPH) / 127.f;
+        box(f, th->lcdBg); frame(f, th->btnEdge);
+        beginPath(); rect(f.x + 2, f.y + 2, (f.w - 4) * m, f.h - 4); fillColor(Color(th->accent, th->lcdBg, 0.45f)); fill();
+        beginPath(); rect(f.x + 2 + (f.w - 4) * m - 1.5f, f.y - 4, 3, f.h + 8); fillColor(th->lcdText); fill();
+        char b[48]; std::snprintf(b, sizeof(b), "MORPH %d%%", (int)std::lround(m * 100.f));
+        label(f.cx(), f.y - 14, b, 11.f, th->text);
+        label(f.x, f.y + f.h + 12, "A", 10.f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        label(f.x + f.w, f.y + f.h + 12, "B", 10.f, th->dim, ALIGN_RIGHT | ALIGN_MIDDLE);
+        const Pattern& P = pat();
+        const int len = P.length ? P.length : 16;
+        std::snprintf(b, sizeof(b), "MORPH STEPS  -  steps %d-%d", stepPg * 16 + 1, stepPg * 16 + 16);
+        label(724, 288, b, 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        const int64_t k = absStep();
+        const int now = k >= 0 && (int)std::lround(gp(gOUT_PATTERN)) == editPattern() ? (int)(k % len) : -1;
+        for (int i = 0; i < 16; ++i) {
+            const int st = stepPg * 16 + i;
+            const R r = laneBar(i);
+            box(r, st < len ? th->inner : Color(th->inner, th->panel, 0.5f));
+            if (st == now) frame(r, th->accent, -1.f, 1.5f);
+            if (P.morph[st] != kNoLock) {
+                const float h = (r.h - 4) * P.morph[st] / 127.f;
+                beginPath(); rect(r.x + 2, r.y + r.h - 2 - h, r.w - 4, h); fillColor(th->lock); fill();
+            } else label(r.cx(), r.y + r.h - 10, "-", 10.f, th->faint);
+        }
+    }
+    void laneSet(float x, float y)
+    {
+        for (int i = 0; i < 16; ++i) {
+            const R r = laneBar(i);
+            if (x < r.x - 2 || x > r.x + r.w + 2) continue;
+            const int st = stepPg * 16 + i;
+            const int v = clampi((int)std::lround((r.y + r.h - y) / r.h * 127.f), 0, 127);
+            if (pat().morph[st] == v) return;
+            char c[48]; std::snprintf(c, sizeof(c), "z %d %d %d", editPattern(), st, v);
+            sendCmd(c); repaint(); return;
+        }
+    }
+    bool morphTabClick(float x, float y, bool right, bool dbl)
+    {
+        for (int a = 0; a < 2; ++a)
+            if (scenePad(a).in(x, y)) { if (right) clearScene(a); else captureScene(a); return true; }
+        const R f = morphFader();
+        if (R{f.x - 6, f.y - 8, f.w + 12, f.h + 16}.in(x, y)) {
+            if (dbl) { setParamGesture(kGlobalBase + gMORPH, 0.f); repaint(); return true; }
+            editParameter(kGlobalBase + gMORPH, true);
+            drag = dkMFader;
+            setParam(kGlobalBase + gMORPH, clampf((x - f.x) / f.w * 127.f, 0.f, 127.f)); repaint();
+            return true;
+        }
+        for (int i = 0; i < 16; ++i)
+            if (laneBar(i).in(x, y)) {
+                const int st = stepPg * 16 + i;
+                if (right || dbl) { char c[48]; std::snprintf(c, sizeof(c), "z %d %d 255", editPattern(), st); sendCmd(c); repaint(); return true; }
+                drag = dkLane; laneSet(x, y);
+                return true;
+            }
+        return false;
+    }
+
+    // ------------------------------------------------------------------ effect presets (click the active tab)
+    static int fxTabOf(int mp)
+    {
+        switch (mp) {
+        case mpEcho: return fxEcho; case mpReverb: return fxReverb; case mpChorus: return fxChorus;
+        case mpChaos: return fxChaos; case mpFilter: return fxFilter; case mpMaster: return fxMaster;
+        default: return -1;
+        }
+    }
+    std::vector<int> fxList() const
+    {
+        std::vector<int> v; const int tab = fxTabOf(mpage);
+        const auto& all = fxPresets();
+        for (int i = 0; i < (int)all.size(); ++i) if (all[i].tab == tab) v.push_back(i);
+        return v;
+    }
+    R fxBox() const { const int rows = ((int)fxList().size() + 1) / 2; return {716.f, 178.f, 448.f, 50.f + rows * 40.f}; }
+    R fxItem(int i) const { return {728.f + (i % 2) * 214.f, 222.f + (i / 2) * 40.f, 206.f, 34.f}; }
+    void drawFxMenu()
+    {
+        const R bx = fxBox();
+        box(bx, th->panel, th->radius); frame(bx, th->lcdText, th->radius, 1.5f);
+        static const char* names[kFxTabs] = {"ECHO", "REVERB", "CHORUS", "CHAOS", "FILTER", "MASTER"};
+        char b[48]; std::snprintf(b, sizeof(b), "%s PRESETS", names[std::max(0, fxTabOf(mpage))]);
+        label(bx.x + 14, bx.y + 22, b, 12.f, th->text, ALIGN_LEFT | ALIGN_MIDDLE);
+        label(bx.x + bx.w - 14, bx.y + 22, "sets this effect only", 9.f, th->dim, ALIGN_RIGHT | ALIGN_MIDDLE);
+        const auto v = fxList(); const auto& all = fxPresets();
+        for (int i = 0; i < (int)v.size(); ++i) button(fxItem(i), all[v[i]].name, false, 10.5f);
+    }
+    void fxMenuClick(float x, float y)
+    {
+        const auto v = fxList(); const auto& all = fxPresets();
+        for (int i = 0; i < (int)v.size(); ++i)
+            if (fxItem(i).in(x, y)) {
+                snapshot(all[v[i]].name);
+                const bool wasRestoring = restoring; restoring = true;
+                for (const FxSet& fs : all[v[i]].set) setParamGesture(kGlobalBase + fs.g, (float)fs.v);
+                restoring = wasRestoring;
+                break;
+            }
+        overlay = ovNone; repaint();
+    }
+
+    // ------------------------------------------------------------------ LFO rings: which knobs an LFO moves
+    struct LfoHit { int s, l; };   // LFO l of track s
+    static constexpr int kUiLfos = (int)(sizeof(kLfoBase) / sizeof(kLfoBase[0]));
+    int lfoHits(int t, int p, LfoHit* out) const
+    {
+        int n = 0;
+        for (int s = 0; s < kTracks && n < 8; ++s)
+            for (int l = 0; l < kUiLfos && n < 8; ++l) {
+                const float* v = &values[s * kTrackParams];
+                if (v[kLfoBase[l] + 1] < 0.5f) continue;                           // depth 0
+                const int trk = lfoTrackIndex((int)std::lround(v[kLfoBase[l] + 5]));
+                if ((trk == 0 ? s : trk - 1) != t) continue;
+                const int d = lfoDestIndex((int)std::lround(v[kLfoBase[l] + 4]));
+                int dp = -1;
+                if (d < kLfoDests) dp = d;
+                else if (d >= kDestL1Rate && d < kDestMorph) dp = lfoParam((d - kDestL1Rate) / 2, (d - kDestL1Rate) & 1);
+                if (dp == p) out[n++] = {s, l};
+            }
+        return n;
+    }
+    // the LFO as the UI imagines it (same rate, wave and phase; not sample-exact): -1..1
+    float lfoUiValue(int s, int l) const
+    {
+        const float* v = &values[s * kTrackParams];
+        const int b = kLfoBase[l];
+        double ph;
+        if (lfoSynced(v[lfoParam(l, 6)])) {
+            const double cyc = kLfoSyncBeats[lfoSyncDivIndex((int)v[b])];
+            const double beats = fineStep() >= 0 ? (double)fineStep() / kFineSteps * 0.25 : nowSec() * gp(gTEMPO) / 60.0;
+            ph = beats / cyc;
+        } else ph = nowSec() * lfoFreeHz(v[b]);
+        ph += v[lfoParam(l, 7)] / 128.0;
+        ph -= std::floor(ph);
+        switch (lfoShapeIndex((int)v[b + 2])) {
+        case 0: return (float)(1.0 - 4.0 * std::fabs(ph - 0.5));
+        case 1: return (float)std::sin(kTwoPi * ph);
+        case 2: return ph < 0.5 ? 1.f : -1.f;
+        case 3: return (float)(2.0 * ph - 1.0);
+        case 4: return (float)(1.0 - 2.0 * ph);
+        default: { const uint32_t x = (uint32_t)(std::floor(nowSec() * lfoFreeHz(v[b])) * 2654435761.0); return (float)((x >> 8) & 0xFFFF) / 32767.5f - 1.f; }
+        }
+    }
+    Color lfoInk() const { return th->logo == lgRiso ? th->lock : Color(64, 206, 255); }
+    bool ringsShown = false; double lastRingPaint = 0.0;
+    void drawLfoRing(const R& r, const LfoHit* h, int n)
+    {
+        ringsShown = true;
+        const float cx = r.cx(), cy = r.y + 44.f, rad = 35.f;
+        const Color c = lfoInk();
+        beginPath(); circle(cx, cy, rad); strokeColor(Color(c.red, c.green, c.blue, 0.28f)); strokeWidth(2.f); stroke();
+        const float a0 = kPi * 0.75f, a1 = kPi * 2.25f;
+        for (int i = 0; i < n && i < 3; ++i) {
+            const float v = lfoUiValue(h[i].s, h[i].l);
+            const float a = a0 + (a1 - a0) * (0.5f + 0.5f * v);
+            beginPath(); arc(cx, cy, rad, a - 0.28f, a + 0.28f, CW); strokeColor(c); strokeWidth(3.5f); lineCap(ROUND); stroke();
+        }
+        char b[24];
+        if (h[0].s == selTrack) std::snprintf(b, sizeof(b), n > 1 ? "L%d+" : "L%d", h[0].l + 1);
+        else std::snprintf(b, sizeof(b), n > 1 ? "T%d L%d+" : "T%d L%d", h[0].s + 1, h[0].l + 1);
+        label(r.x + r.w - 6, r.y + 8, b, 8.5f, c, ALIGN_RIGHT | ALIGN_MIDDLE);
+    }
     bool euclidSlot(int k) const { return page == pgArp && (k == 6 || k == 7); }
     void applyEuclid(int t)
     {
@@ -3580,8 +3789,6 @@ private:
     int presetSel = -1, presetScroll = 0;
     bool deleteArmed = false, saveConfirm = false;
     std::vector<PEntry> presetView; std::vector<std::string> favs; std::string presetSearch; int presetPage = 0;
-    float morphPos = 0.f; bool morphReady = false; double morphLast = 0.0;
-    std::vector<float> morphBase, morphTarget; std::vector<uint8_t> morphKind; uint8_t morphMach[2][kTracks] = {};   // kind: 0 fixed, 1 blend, 2 switch at 50 %
     std::vector<std::string> userPresets;
     std::string presetMsg, saveName;
     bool viewDirty = false; int viewDirtyTicks = 0;

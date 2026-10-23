@@ -113,6 +113,22 @@ protected:
             p.ranges.min = 0; p.ranges.max = kPatterns - 1; p.ranges.def = 0; return;
         default: break;
         }
+        if (g >= gCHA_SEND && g < gCHA_SEND + kTracks) {   // CHAOS send of each track
+            static char names[kTracks][32], symbols[kTracks][16];
+            const int t = g - gCHA_SEND;
+            std::snprintf(names[t], sizeof(names[t]), "T%02d Chaos Send", t + 1);
+            std::snprintf(symbols[t], sizeof(symbols[t]), "t%02d_chaos", t + 1);
+            p.name = names[t]; p.symbol = symbols[t];
+            p.ranges.min = 0; p.ranges.max = 127; p.ranges.def = 127;
+            return;
+        }
+        if (g == gMF_ON) {
+            p.name = "Filter On"; p.symbol = "mfilter_on"; p.ranges.min = 0; p.ranges.max = 1; p.ranges.def = 1;
+            p.hints |= kParameterIsBoolean | kParameterIsInteger; return;
+        }
+        if (g == gMORPH) {
+            p.name = "Scene Morph"; p.symbol = "morph"; p.ranges.min = 0; p.ranges.max = 127; p.ranges.def = 0; return;
+        }
         if (g >= gCHO_SEND && g < gCHO_SEND + kTracks) {   // chorus send of each track
             static char names[kTracks][32], symbols[kTracks][16];
             const int t = g - gCHO_SEND;
@@ -125,7 +141,7 @@ protected:
         static const char* section[] = {"Echo","Echo","Echo","Echo","Echo","Echo","Reverb","Reverb","Reverb","Reverb",
                                           "Reverb","Reverb","Master","Master","Comp","Comp","Comp","Comp","Master","Master",
                                           "Echo","Echo","Reverb","Reverb","Filter","Filter","Filter",
-                                          "Chorus","Chorus","Chorus","Chorus","Chorus","Chorus","Chorus","Chorus","Glitch","Glitch","Glitch","Glitch","Glitch","Glitch","Glitch"};
+                                          "Chorus","Chorus","Chorus","Chorus","Chorus","Chorus","Chorus","Chorus","Chaos","Chaos","Chaos","Chaos","Chaos","Chaos","Chaos"};
         static const char* syms[] = {"echo_time","echo_fb","echo_lpf","echo_hpf","echo_width","echo_lev",
                                        "rev_decay","rev_damp","rev_gate","rev_hpf","rev_pre","rev_lev",
                                        "eq_low","eq_high","cmp_thr","cmp_ratio","cmp_atk","cmp_rel","drive","volume",
@@ -294,6 +310,7 @@ protected:
                         std::memcpy(engine->bank.machine, master->machine, sizeof(master->machine));
                         std::memcpy(engine->bank.mute, master->mute, sizeof(master->mute)); std::memcpy(engine->bank.solo, master->solo, sizeof(master->solo));
                         std::memcpy(engine->bank.kit, master->kit, sizeof(master->kit));
+                    engine->bank.scenes = master->scenes;
                         engine->bank.glob = master->glob;
                     }
                 }

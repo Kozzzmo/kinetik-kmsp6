@@ -1,4 +1,4 @@
-// Kinetik — master effects: echo (5 models), reverb (5 models), chorus (3 models), glitch / beat repeat, EQ,
+// Kinetik — master effects: echo (5 models), reverb (5 models), chorus (3 models), CHAOS (glitch / beat repeat), EQ,
 // compressor, drive, safety limiter.
 // Shared by KDSP-16 and KMSP-6: keep this file identical in both repositories.
 // Uses the global parameter layout of Params.hpp (gECHO_TIME ... gREV_MOD), identical in both products.
@@ -53,7 +53,7 @@ static const char* const kChorusModelInfo[kChorusModels] = {
 inline int chorusModelIndex(int v) { return clampMI(v * kChorusModels / 128, kChorusModels); }
 inline int chorusModelValue(int i) { return (i * 128 + kChorusModels - 1) / kChorusModels; }
 
-// glitch / beat repeat: grabs a slice of the mix and repeats it (tempo-synced)
+// CHAOS (glitch / beat repeat): grabs a slice of the tracks sent to it (CHAOS send) and repeats it, tempo-synced
 static constexpr int kGlSizes = 7, kGlLens = 5;
 static const float kGlSizeBeats[kGlSizes] = {1.f, 0.5f, 1.f / 3.f, 0.25f, 1.f / 6.f, 0.125f, 0.0625f};
 static const char* const kGlSizeNames[kGlSizes] = {"1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32", "1/64"};
@@ -121,7 +121,7 @@ public:
     // beat0 = song position (beats) of the first frame, playing = transport running (the glitch follows the bars)
     void process(const float* g, float bpm, const float* mainL, const float* mainR,
                  const float* sendDL, const float* sendDR, const float* sendRL, const float* sendRR,
-                 const float* sendCL, const float* sendCR, double beat0, bool playing,
+                 const float* sendCL, const float* sendCR, const float* sendGL, const float* sendGR, double beat0, bool playing,
                  float* outL, float* outR, uint32_t n)
     {
         // ================= echo: per-model settings
@@ -442,7 +442,8 @@ public:
             float l = mainL[i] + dl * eLev + outRL * 0.35f * rLev + cl;
             float r = mainR[i] + dr * eLev + outRR * 0.35f * rLev + cr;
 
-            // ---------------- glitch: repeats a slice of the mix (CHANCE per bar on the beats, or HOLD)
+            // ---------------- CHAOS: repeats a slice of the sent tracks (CHANCE per bar on the beats, or HOLD); the sent
+            // tracks' dry sound is replaced by the repeats, the other tracks and the effect returns keep playing
             if (glOn) {
                 double beat;
                 if (playing) beat = beat0 + (double)i * bpf; else { glFreeBeat += bpf; beat = glFreeBeat; }
@@ -457,7 +458,7 @@ public:
                         glLen = hold ? 0xFFFFFFFFu : (uint32_t)std::max<double>(glSlice, lenBeats / bpf);
                     }
                 }
-                if (!glActive || glPos < glSlice) { glL[glW] = l; glR[glW] = r; if (++glW >= gsz) glW = 0; }
+                if (!glActive || glPos < glSlice) { glL[glW] = sendGL[i]; glR[glW] = sendGR[i]; if (++glW >= gsz) glW = 0; }
                 if (glActive) {
                     const uint32_t W = std::min<uint32_t>(96, glSlice / 4);
                     if (glHoldEvt && !hold && glLen == 0xFFFFFFFFu) glLen = (glPos / glSlice + 1) * glSlice;   // released: end of this slice
@@ -481,7 +482,7 @@ public:
                     if (nrep > 0) wnd = std::min(wnd, (float)v / (float)W);
                     const float act = glLen == 0xFFFFFFFFu ? 1.f : std::min(1.f, (float)(glLen - glPos) / (float)W);
                     const float m = glMix * act, wg = glGain * wnd;
-                    l = l * (1.f - m) + wl * wg * m; r = r * (1.f - m) + wr * wg * m;
+                    l += (wl * wg - sendGL[i]) * m; r += (wr * wg - sendGR[i]) * m;
                     if (++glPos >= glLen) glActive = false;
                 }
                 glPrevBeat = beat;

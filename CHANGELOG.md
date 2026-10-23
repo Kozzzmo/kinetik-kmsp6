@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.7.0
+
+- **Scenes A/B and MORPH** (new MORPH tab): take the current sound as scene A or B (click; right-click empties it),
+  or send a preset there (PRESETS > TO SCENE A / B). The MORPH fader blends the sound from A to B in real time: it is
+  automatable in the music software, each step of the pattern can set its own morph position (MORPH STEPS), and an LFO
+  can move it (new LFO destination MORPH). An empty scene stands for the knobs as they are. Scenes are saved with the
+  project and with user presets.
+- **LFO rings**: a knob moved by an LFO gets a coloured ring that moves with the LFO, and a badge (L1, L2... or T3 L1
+  when the LFO is on another track).
+- **LFOs modulate LFOs**: new destinations LFO1/LFO2/LFO3 RATE and DEPTH (any LFO can speed up, slow down or fade
+  another one), plus MORPH. Existing LFO settings keep their destination.
+- **Master section reordered**: ECHO, REVERB, CHORUS, CHAOS, FILTER, LINK, MORPH, MASTER.
+- **GLITCH is now CHAOS**, with a **CHAOS send per track** (FX page, next to the new CHORUS send knob): only the tracks
+  sent to it are repeated; the others and the effect returns keep playing.
+- **FX page / FILTER page**: the EQ moved to the FILTER page (10 knobs); the CHORUS and CHAOS sends sit on the FX page,
+  next to DELAY and REVERB.
+- **Master filter ON / OFF** button.
+- **Effect presets**: click the active tab of ECHO, REVERB, CHORUS, CHAOS, FILTER or MASTER for 6 to 8 presets of that
+  effect (Slapback, Dub Tape, Gated Snare, Shimmer Pad, Jet Flanger, Stutter, Roll Up, Telephone, Glue...).
+- **Presets window**: LOAD ALL, LOAD SOUND or LOAD PATTERNS; TO SCENE A / B. (The old MORPH slider of this window
+  became the MORPH tab.)
+- **6 new factory presets** showing the scenes, CHAOS, chorus and SPEED: Morph Acid, Ensemble Strings, Chaos Arp, Speed Phase, Morph Pad, Glitch Bass.
+
 ## 0.6.0
 
 - **Chorus** (new CHORUS tab in the master section): CHORUS, ENSEMBLE (three voices per side, lush) and FLANGER
