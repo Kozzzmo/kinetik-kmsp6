@@ -30,8 +30,8 @@ inline void migrateFilterV1(float* trackParams, int oldKeyTrk)
 // parameter index of a "V <index> <value>" line written by a KMSP-6 0.1 preset (50 params per track)
 inline int presetIndexV1(int idx)
 {
-    constexpr int oldTP = 50, oldGB = kTracks * oldTP;
-    if (idx < oldGB) return (idx / oldTP) * kTrackParams + idx % oldTP;
+    constexpr int oldTP = 50, oldGB = kLegacyTracks * oldTP;
+    if (idx < oldGB) return tpIndex(idx / oldTP, idx % oldTP);
     return kGlobalBase + (idx - oldGB);
 }
 
@@ -160,7 +160,7 @@ struct PB { // preset builder
         for (int i = 0; i < kSceneValues; ++i) b.scenes.val[a][i] = (uint8_t)clampi((int)std::lround(v[i]), 0, 127);
         for (const auto& c : changes) if (c.first >= 0 && c.first < kSceneValues) b.scenes.val[a][c.first] = (uint8_t)clampi(c.second, 0, 127);
     }
-    static int tpi(int t, int p) { return t * kTrackParams + p; }
+    static int tpi(int t, int p) { return tpIndex(t, p); }
     static int gpi(int g) { return kGlobalBase + g; }
     void lane(int pat, std::initializer_list<int> vals)
     {
@@ -563,7 +563,7 @@ static void presetEnsembleStrings(PB& b)
     b.fx(0, tpREV, 60); b.fx(0, tpVOL, 80);
     b.kit(1, mSAW, {0, 0, 72, 64, 64, 64, 40, 0}); b.amp(1, 0, 0, 60, 70, 40); b.flt2(1, 55, 20, 0, 0, 0, 45, 75); b.fx(1, tpVOL, 92);
     b.kit(2, mPLUCK, {70, 70, 50, 40, 10, 50, 40, 0}); b.amp(2, 0, 0, 70, 0, 50); b.fx(2, tpDEL, 50); b.fx(2, tpPAN, 30);
-    for (int t : {0, 2}) b.g(gCHO_SEND + t, 110);
+    for (int t : {0, 2}) b.g(choSendG(t), 110);
     b.g(gCHO_MODEL, chorusModelValue(cmEnsemble)); b.g(gCHO_RATE, 35); b.g(gCHO_DEPTH, 85); b.g(gCHO_LEV, 74);
     b.g(gREV_SIZE, 85); b.g(gREV_MODEL, reverbModelValue(rmHall));
     b.seq(0, 0, "C3 - - - | - - - - | Ab2 - - - | - - - - | Eb3 - - - | - - - - | Bb2 - - - | - - - -");
@@ -577,8 +577,8 @@ static void presetChaosArp(PB& b)
     b.kit(0, mFM, {32, 60, 64, 20, 10, 0, 40, 30}); b.amp(0, 0, 0, 30, 0, 30); b.arp(0, 3, 1, 1, 4); b.fx(0, tpDEL, 40);
     b.kit(1, mSAW, {0, 0, 64, 0, 64, 64, 40, 0}); b.amp(1, 0, 0, 40, 50, 20); b.flt2(1, 45, 40, 0, 0, 0, 40, 95);
     b.kit(2, mNOISE, {110, 40, 0, 0, 0, 0, 0, 0}); b.amp(2, 0, 0, 20, 0, 15); b.fx(2, tpVOL, 60);
-    for (int t = 0; t < kTracks; ++t) b.g(gCHA_SEND + t, 0);
-    b.g(gCHA_SEND + 0, 127); b.g(gCHA_SEND + 2, 100);
+    for (int t = 0; t < kTracks; ++t) b.g(chaSendG(t), 0);
+    b.g(chaSendG(0), 127); b.g(chaSendG(2), 100);
     b.g(gGL_CHANCE, 40); b.g(gGL_SIZE, 92); b.g(gGL_LEN, 30); b.g(gGL_PITCH, 100); b.g(gGL_FADE, 20); b.g(gGL_REV, 40); b.g(gGL_MIX, 127);
     b.seq(0, 0, "A3 . . . | C4 . . . | E3 . . . | G3 . . .");
     b.seq(0, 1, "A1 . A1 . | . A1 . ~C2 | A1 . A1 . | . G1 . ~E1");
@@ -604,7 +604,7 @@ static void presetMorphPad(PB& b)
     b.kit(0, mWAVE, {10, 20, 60, 64, 70, 50, 0, 0}); b.amp(0, 90, 0, 90, 110, 100); b.flt2(0, 70, 20, 0, 10, 40, 70, 64);
     b.fx(0, tpREV, 80); b.fx(0, tpVOL, 80);
     b.kit(1, mVOX, {30, 50, 30, 60, 20, 50, 30, 30}); b.amp(1, 80, 0, 90, 100, 100); b.fx(1, tpREV, 80); b.fx(1, tpVOL, 70);
-    b.g(gCHO_SEND + 0, 80); b.g(gCHO_SEND + 1, 80); b.g(gCHO_MODEL, chorusModelValue(cmEnsemble)); b.g(gCHO_LEV, 70);
+    b.g(choSendG(0), 80); b.g(choSendG(1), 80); b.g(gCHO_MODEL, chorusModelValue(cmEnsemble)); b.g(gCHO_LEV, 70);
     b.g(gREV_SIZE, 100); b.g(gREV_MODEL, reverbModelValue(rmShimmer));
     // a slow LFO on track 2 sweeps the MORPH: dark breathing pad <-> bright choir
     b.lfo(1, 2, 5, 127, 1, 0, kDestMorph);
@@ -620,8 +620,8 @@ static void presetGlitchBass(PB& b)
     b.kit(0, mPULSE, {40, 50, 40, 20, 0, 60, 0, 0}); b.amp(0, 0, 0, 40, 60, 20); b.flt2(0, 50, 60, 0, 0, 0, 35, 100);
     b.fx(0, tpDIST, 50); b.fx(0, tpPORT, 15); b.fx(0, tpVOL, 92);
     b.kit(1, mFM, {48, 80, 64, 40, 30, 1, 20, 10}); b.amp(1, 0, 0, 25, 0, 20); b.fx(1, tpDEL, 50);
-    for (int t = 0; t < kTracks; ++t) b.g(gCHA_SEND + t, 0);
-    b.g(gCHA_SEND + 0, 127);
+    for (int t = 0; t < kTracks; ++t) b.g(chaSendG(t), 0);
+    b.g(chaSendG(0), 127);
     b.g(gGL_CHANCE, 35); b.g(gGL_SIZE, 70); b.g(gGL_LEN, 30); b.g(gGL_PITCH, 30); b.g(gGL_FADE, 30); b.g(gGL_REV, 50); b.g(gGL_MIX, 127);
     b.seq(0, 0, "!E1 . E1 ~G1 | . E1 . !B0 | E1 ~E2 . D2 | . B0 ~D1 .");
     b.seq(0, 1, ". . . . | E4 . . . | . . . . | E4 . G4 .");
@@ -671,7 +671,7 @@ inline void buildPreset(int i, float* values, Bank& bank)
         const float e = std::log(q / qMin) / std::log((qMin + span) / qMin);
         return std::round(127.f * std::pow(clampf(e, 0.f, 1.f), 0.8f));
     };
-    for (int t = 0; t < kTracks; ++t) values[t * kTrackParams + tpRESO] = conv(values[t * kTrackParams + tpRESO], 0.5f, 17.f);
+    for (int t = 0; t < kTracks; ++t) values[tpIndex(t, tpRESO)] = conv(values[tpIndex(t, tpRESO)], 0.5f, 17.f);
     values[kGlobalBase + gMF_RESO] = conv(values[kGlobalBase + gMF_RESO], 0.707f, 9.f);
     for (auto& pat : bank.patterns)
         for (int t = 0; t < kTracks; ++t)

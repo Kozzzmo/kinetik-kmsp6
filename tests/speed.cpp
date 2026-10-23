@@ -11,7 +11,7 @@ int main()
     for (int sp = 0; sp < kTrackSpeeds; ++sp) {
         std::vector<float> v(kTotalParams); Bank* b = new Bank(); buildPreset(0, v.data(), *b);   // Init
         Engine* e = new Engine(); e->init(48000);
-        for (int t = 0; t < kTracks; t++) for (int p = 0; p < kTrackParams; p++) e->trackParam[t][p] = v[t * kTrackParams + p];
+        for (int t = 0; t < kTracks; t++) for (int p = 0; p < kTrackParams; p++) e->trackParam[t][p] = v[tpIndex(t, p)];
         for (int g = 0; g < gOUT_STEP; g++) e->global[g] = v[kGlobalBase + g];
         Pattern& P = b->patterns[0];
         for (int s = 0; s < 16; ++s) { P.flags[0][s] = sfTrig; P.flags[1][s] = sfTrig; }

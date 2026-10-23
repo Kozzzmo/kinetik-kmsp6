@@ -1,6 +1,6 @@
 # Kinetik KMSP-6 — Mono Synth Program
 
-A 6-track monophonic synthesizer plugin (VST3 / AU / CLAP): eight machines (SAW, PULSE, SUPER, FM,
+An 8-track monophonic synthesizer plugin (VST3 / AU / CLAP): eight machines (SAW, PULSE, SUPER, FM,
 WAVE, VOX, PLUCK, NOISE), AHDSR envelope, dual filter with envelope, 3 LFOs per track, an arpeggiator
 per track, a 64-step note sequencer with slides, note lengths, parameter locks, conditional trigs,
 ratchets and live recording, an on-screen keyboard, four stereo outputs, master echo / reverb /

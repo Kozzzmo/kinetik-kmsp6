@@ -13,7 +13,7 @@ struct Rig {
     {
         v.assign(kTotalParams, 0.f); buildPreset(0, v.data(), b);
         e.init(48000);
-        for (int t = 0; t < kTracks; t++) for (int p = 0; p < kTrackParams; p++) e.trackParam[t][p] = v[t * kTrackParams + p];
+        for (int t = 0; t < kTracks; t++) for (int p = 0; p < kTrackParams; p++) e.trackParam[t][p] = v[tpIndex(t, p)];
         for (int g = 0; g < gOUT_STEP; g++) e.global[g] = v[kGlobalBase + g];
         for (int t = 0; t < kTracks; ++t) b.machine[t] = mOFF;
         b.machine[0] = mNOISE;

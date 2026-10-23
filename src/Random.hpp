@@ -14,7 +14,7 @@ struct RandGen {
     bool chance(float p) { return uni() < p; }
 };
 
-inline float& tparam(float* values, int t, int p) { return values[t * kTrackParams + p]; }
+inline float& tparam(float* values, int t, int p) { return values[tpIndex(t, p)]; }
 
 // scales used to keep random melodies musical
 struct RndScale { int n; int s[7]; };

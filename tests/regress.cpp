@@ -21,7 +21,7 @@ static Print render(int preset)
 {
     std::vector<float> v(kTotalParams); Bank* b = new Bank(); buildPreset(preset, v.data(), *b);
     Engine* e = new Engine(); e->init(kSr); e->bank = *b;
-    for (int t = 0; t < kTracks; t++) for (int p = 0; p < kTrackParams; p++) e->trackParam[t][p] = v[t * kTrackParams + p];
+    for (int t = 0; t < kTracks; t++) for (int p = 0; p < kTrackParams; p++) e->trackParam[t][p] = v[tpIndex(t, p)];
     for (int g = 0; g < gOUT_STEP; g++) e->global[g] = v[kGlobalBase + g];
     e->global[gPLAY] = 1.f;
     std::vector<float> L(kBlock), R(kBlock);

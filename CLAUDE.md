@@ -1,6 +1,6 @@
 # Kinetik KMSP-6 — project memory for Claude
 
-Kinetik KMSP-6 ("Kinetik Mono Synth Program") is a 6-track monophonic synthesizer plugin (VST3 / AU / CLAP,
+Kinetik KMSP-6 ("Kinetik Mono Synth Program") is an 8-track (6 before 0.10) monophonic synthesizer plugin (VST3 / AU / CLAP,
 built with DPF and NanoVG) with a note sequencer, inspired by the workflow of classic synth grooveboxes. All
 synthesis is original code. Sister product: **Kinetik KDSP-16** (drums), repository `Kozzzmo/kinetik-kdsp16`.
 
@@ -8,7 +8,7 @@ synthesis is original code. Sister product: **Kinetik KDSP-16** (drums), reposit
 
 | File | Role |
 |---|---|
-| `Params.hpp` | 6 tracks, 128 steps, 16 patterns; 56 lockable params per track: 0–7 machine, AMP 8–15, FILTER 16–23 (CUTOFF RESO TYPE LOW CUT ENV ATK ENV DEC ENV AMT KEY TRK), FX 24–31, LFO1/2/3 at 32/38/44 (RATE DEPTH WAVE MODE DEST TARGET; DEST index 32 = PITCH) + SYNC/PHASE at 50+2l (`lfoParam(l,k)`); machines SAW PULSE SUPER FM WAVE VOX PLUCK NOISE CHORD (`kChordShapeDefs`, 3-8 voices, paraphonic); kit fields OUT MIDI TRNSP(=PITCH) LEGATO KEYTRK(unused, old banks) ARP mode/oct/speed/chord SCALE ROOT; scales `kScaleDefs`; master params incl. ECHO/REVERB MODEL + MOD |
+| `Params.hpp` | 8 tracks (see 0.10), 128 steps, 16 patterns; 56 lockable params per track: 0–7 machine, AMP 8–15, FILTER 16–23 (CUTOFF RESO TYPE LOW CUT ENV ATK ENV DEC ENV AMT KEY TRK), FX 24–31, LFO1/2/3 at 32/38/44 (RATE DEPTH WAVE MODE DEST TARGET; DEST index 32 = PITCH) + SYNC/PHASE at 50+2l (`lfoParam(l,k)`); machines SAW PULSE SUPER FM WAVE VOX PLUCK NOISE CHORD (`kChordShapeDefs`, 3-8 voices, paraphonic); kit fields OUT MIDI TRNSP(=PITCH) LEGATO KEYTRK(unused, old banks) ARP mode/oct/speed/chord SCALE ROOT; scales `kScaleDefs`; master params incl. ECHO/REVERB MODEL + MOD |
 | `MasterFx.hpp` | master echo (5 models) / reverb (5 models, own decay ranges, ROOM/HALL early reflections, SPRING tank loop) / EQ / compressor / limiter; MOD is model-specific (`kEchoModLabel` / `kReverbModLabel`, UI `masterName()`) — **identical in kinetik-kdsp16** |
 | `Bank.hpp` | like KDSP-16 plus per-step `note` (60 = C3, Ableton naming), `gate` (index into `kGateSteps`) and `chord` (index into `kChords`, played by LINK); `Bank::glob` = global scale + LINK settings; header `KMSP2`; extra commands `n` `g` `h` (chord), `G scale root`, `LK first voices mode copy detune` |
 | `Wavetable.hpp` | `WaveSet` (up to 32 band-limited frames × 11 mip levels, built by FFT); `WaveBank` = 8 factory tables built at start-up on several threads (CLASSIC = the table before 0.9); `WaveUser.hpp` = user tables (import, state codec) |
@@ -242,3 +242,15 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
   KDSP-16's samples (`engine->userWaves[t]`). UI: `showTable()`, `tabPrev/Name/Next/Load`, `loadWaveFile` (dr_wav),
   `uiWaves[t]` (scope + names), user presets carry `WAV <line>` lines. Test: `tests/wavetable.cpp` (needs -pthread).
 
+## Added in KMSP-6 0.10 — 8 tracks
+
+- `kTracks = 8`, `kLegacyTracks = 6`. **Host parameter layout of 0.9 is kept**: tracks 0-5 = indices 0..335, then the
+  globals (`kGlobalBase = 336`, the chorus / CHAOS send blocks stay 6 wide), then after `gECHO_FREEZE`: `gCHO_SEND2`,
+  `gCHA_SEND2` (tracks 6-7) and `gEXT_TP` (all parameters of tracks 6-7). **Never compute `t * kTrackParams + p`**: use
+  `tpIndex(t, p)` (host index), `tpOf(i, t, p)` (back), `choSendG(t)` / `chaSendG(t)` (send globals). Each track's 56
+  parameters stay contiguous, so `&values[tpIndex(t, 0)]` covers a whole track. `globalDefault` returns
+  `trackParamDefault` for the extra track block. `kDefaultKit` tracks 7-8 = VOX, CHORD.
+- LFO TARGET: `lfoTrackIndex` keeps the 7 bins of 0.9 and splits the last (110..127) into tracks 6 / 7 / 8.
+- Scenes: machine bytes and values may be shorter (older lines), see `sceneFromLine`. Engine `applyMorph` uses `tpOf`.
+- UI: track buttons 142.5 px wide, LINK diagram sized from `kTracks`, MIDI export channels 1-8.
+- Test: `tests/tracks8.cpp` (0.9 indices unchanged, round trip, LFO targets, track 8 plays, 6-track bank loads).

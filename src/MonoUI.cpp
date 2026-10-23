@@ -73,7 +73,7 @@ public:
         setGeometryConstraints((uint)(W * 0.6 * (s > 1.01 ? s : 1.0)), (uint)(H * 0.6 * (s > 1.01 ? s : 1.0)), true, false);
         for (int i = 0; i < kTotalParams; ++i) values[i] = 0.f;
         for (int t = 0; t < kTracks; ++t)
-            for (int p = 0; p < kTrackParams; ++p) values[t * kTrackParams + p] = trackParamDefault(t, p);
+            for (int p = 0; p < kTrackParams; ++p) values[tpIndex(t, p)] = trackParamDefault(t, p);
         for (int g = gECHO_TIME; g < gOUT_STEP; ++g) values[kGlobalBase + g] = globalDefault(g);
         values[kGlobalBase + gTEMPO] = 120;
         values[kGlobalBase + gOUT_STEP] = -1;
@@ -174,7 +174,7 @@ protected:
     }
 
     // ------------------------------------------------------------------ helpers
-    float& tp(int t, int p) { return values[t * kTrackParams + p]; }
+    float& tp(int t, int p) { return values[tpIndex(t, p)]; }
     float gp(int g) const { return values[kGlobalBase + g]; }
     int editPattern() const { return clampi((int)std::lround(gp(gPATTERN)), 0, kPatterns - 1); }
     int machineOf(int t) const { return clampi(bank->machine[t], 0, kMachines - 1); }
@@ -329,7 +329,7 @@ protected:
     std::string lfoDestName(int t, int l, int d) const
     {
         if (d >= kLfoDests) return vdestName(d);
-        const int trk = lfoTrackIndex((int)std::lround(values[t * kTrackParams + kLfoBase[l] + 5]));
+        const int trk = lfoTrackIndex((int)std::lround(values[tpIndex(t, kLfoBase[l] + 5)]));
         const int tt = trk == 0 ? t : trk - 1;
         return trackParamName(machineOf(tt), d);
     }
@@ -353,7 +353,7 @@ protected:
         if (l >= 0) {
             switch (lk) {
             case 0:
-                if (lfoSynced(values[t * kTrackParams + lfoParam(l, 6)])) return kLfoSyncNames[lfoSyncDivIndex(iv)];
+                if (lfoSynced(values[tpIndex(t, lfoParam(l, 6))])) return kLfoSyncNames[lfoSyncDivIndex(iv)];
                 { const float hz = lfoFreeHz(v); std::snprintf(b, sizeof(b), hz < 10.f ? "%.2f" : "%.1f", hz); return b; }
             case 2: return kLfoShapes[lfoShapeIndex(iv)];
             case 3: return kLfoTypes[lfoTypeIndex(iv)];
@@ -367,7 +367,7 @@ protected:
         if (p < 8 && machineOf(t) == mCHORD) {
             if (p == 1) return kChordShapeDefs[chordShapeIndex(iv)].name;
             if (p == 2) { std::snprintf(b, sizeof(b), "%d", chordVoices(iv)); return b; }
-            if (p == 3) { const int nv = chordVoices((int)std::lround(values[t * kTrackParams + 2])); std::snprintf(b, sizeof(b), "%d", std::min(nv - 1, (int)(v / 127.f * nv))); return b; }
+            if (p == 3) { const int nv = chordVoices((int)std::lround(values[tpIndex(t, 2)])); std::snprintf(b, sizeof(b), "%d", std::min(nv - 1, (int)(v / 127.f * nv))); return b; }
         }
         if (p < 8 && machineOf(t) == mSAW && p == 4) { std::snprintf(b, sizeof(b), "%+d", (int)std::lround(iv / 127.f * 4.f) - 2); return b; }
         if (p < 8 && machineOf(t) == mSUPER && p == 5) { std::snprintf(b, sizeof(b), "%+d", (int)std::lround(iv / 127.f * 4.f) - 2); return b; }
@@ -430,7 +430,7 @@ protected:
     }
 
     // ------------------------------------------------------------------ layout
-    R trackBtn(int t) const { return {20.f + t * 190.f, 66.f, 184.f, 64.f}; }
+    R trackBtn(int t) const { return {20.f + t * 142.5f, 66.f, 137.f, 64.f}; }   // 8 tracks
     R muteBtn(int t) const { R r = trackBtn(t); return {r.x + r.w - 30.f, r.y + r.h - 28.f, 30.f, 28.f}; }
     R soloBtn(int t) const { const R m = muteBtn(t); return {m.x - 28.f, m.y, 28.f, m.h}; }
     R lcd() const { return {20.f, 146.f, 680.f, 150.f}; }
@@ -1285,7 +1285,7 @@ protected:
         // sends to the master delay and reverb
         {
             const R c = cell(3); frame(c, withAlpha(th->lcdDim, 0.35f), 2.f);
-            const float sd = shownValue(tpDEL) / 127.f, sr2 = shownValue(tpREV) / 127.f, sc = gp(gCHO_SEND + selTrack) / 127.f;
+            const float sd = shownValue(tpDEL) / 127.f, sr2 = shownValue(tpREV) / 127.f, sc = gp(choSendG(selTrack)) / 127.f;
             const float bw = (c.w - 40) / 3.f;
             const float lv[3] = {sd, sr2, sc};
             const Color col[3] = {ink(tpDEL), ink(tpREV), th->lcdText};
@@ -1485,8 +1485,8 @@ protected:
     {
         if (lockStep >= 0) writeLock(pi, (int)std::lround(v));
         else {
-            setParamGesture(selTrack * kTrackParams + pi, v);
-            for (int t : groupOthers()) setParamGesture(t * kTrackParams + pi, v);
+            setParamGesture(tpIndex(selTrack, pi), v);
+            for (int t : groupOthers()) setParamGesture(tpIndex(t, pi), v);
         }
     }
     bool destClick(float x, float y)
@@ -1630,8 +1630,8 @@ protected:
             const bool enabled = k == 0 || (on && (k != 4 || g.linkMode == lmUnison));
             drawKnob(mKnob(k), (float)v / linkMax(k), names[k], t, false, drag == dkLink && dragIndex == k, enabled);
         }
-        // group diagram: the six tracks, the linked ones joined, the first = where you play / sequence
-        const float x0 = 836.f, y0 = 314.f, w = 50.f;
+        // group diagram: every track, the linked ones joined, the first = where you play / sequence
+        const float x0 = 836.f, y0 = 314.f, w = (320.f - (kTracks - 1) * 4.f) / kTracks;
         label(x0, y0 - 12, on ? "PLAY TRACK  > VOICES" : "LINK OFF", 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
         for (int t = 0; t < kTracks; ++t) {
             const R r{x0 + t * (w + 4), y0, w, 30};
@@ -2286,7 +2286,7 @@ protected:
                 std::memcpy(nb->solo, fileBank->solo, sizeof(nb->solo));   // no solo left over from before
                 nb->scenes = fileBank->scenes;
                 std::memcpy(nb->kit, fileBank->kit, sizeof(nb->kit));
-                if (v1) for (int t = 0; t < kTracks; ++t) migrateFilterV1(&nv[t * kTrackParams], fileBank->kit[t][kfKeyTrk]);
+                if (v1) for (int t = 0; t < kTracks; ++t) migrateFilterV1(&nv[tpIndex(t, 0)], fileBank->kit[t][kfKeyTrk]);
                 if (withPatterns) for (int p = 0; p < kPatterns; ++p) nb->patterns[p] = fileBank->patterns[p];
             }
         }
@@ -2733,7 +2733,7 @@ protected:
     {
         m = clampi(m, 0, kMachines - 1);
         char b[32]; std::snprintf(b, sizeof(b), "M %d %d", t, m); sendCmd(b);
-        for (int k = 0; k < 8; ++k) setParamGesture(t * kTrackParams + k, kMachineDefs[m].def[k]);
+        for (int k = 0; k < 8; ++k) setParamGesture(tpIndex(t, k), kMachineDefs[m].def[k]);
         repaint();
     }
 
@@ -2749,14 +2749,14 @@ protected:
     void groupBegin(int pi)
     {
         for (int t = 0; t < kTracks; ++t) grpBase[t] = tp(t, pi);
-        for (int t : groupOthers()) editParameter(t * kTrackParams + pi, true);
+        for (int t : groupOthers()) editParameter(tpIndex(t, pi), true);
     }
-    void groupEnd(int pi) { for (int t : groupOthers()) editParameter(t * kTrackParams + pi, false); }
+    void groupEnd(int pi) { for (int t : groupOthers()) editParameter(tpIndex(t, pi), false); }
     // selTrack's value went from grpBase[selTrack] to v: move the others by the same amount
     void groupFollow(int pi, float v)
     {
         const float d = v - grpBase[selTrack];
-        for (int t : groupOthers()) setParam(t * kTrackParams + pi, clampf(grpBase[t] + d, 0.f, 127.f));
+        for (int t : groupOthers()) setParam(tpIndex(t, pi), clampf(grpBase[t] + d, 0.f, 127.f));
     }
     void setKitGroup(int f, int v)
     {
@@ -2833,7 +2833,7 @@ protected:
             const int iv = (int)std::lround(v);
             if (selLockDiffers(pi, iv)) writeLock(pi, iv);
         } else {
-            setParam(selTrack * kTrackParams + pi, v);
+            setParam(tpIndex(selTrack, pi), v);
             if (grouped()) groupFollow(pi, v);
         }
         repaint();
@@ -2976,7 +2976,7 @@ protected:
         if (trkCopy().in(x, y)) return "Copy this track: its steps and its sound.";
         if (trkPaste().in(x, y)) return "Click: paste the copied steps. Right-click: paste the copied sound.";
         if (trkClear().in(x, y)) return "Remove every step of this track in this pattern.";
-        if (patMidi().in(x, y)) return "Export this pattern as a MIDI file (Documents / Kinetik / KMSP-6 MIDI): one MIDI track per track, channels 1-6, notes as written on the steps (the plug-in applies its transpose and scale when the file plays it back). Drag it from the folder onto a MIDI track.";
+        if (patMidi().in(x, y)) return "Export this pattern as a MIDI file (Documents / Kinetik / KMSP-6 MIDI): one MIDI track per track, channels 1-8, notes as written on the steps (the plug-in applies its transpose and scale when the file plays it back). Drag it from the folder onto a MIDI track.";
         if (lockClrAll().in(x, y)) return "Remove every parameter lock of this track in this pattern.";
         if (shiftL().in(x, y)) return "Move the steps of this track one step earlier.";
         if (shiftR().in(x, y)) return "Move the steps of this track one step later.";
@@ -3022,13 +3022,13 @@ protected:
                 drag = dkNone; repaint(); return true;
             }
             if (drag == dkTrackKnob && std::fabs(y - dragY) < 3.f && page >= pgLfo1 && page <= pgLfo3 && (dragIndex == 4 || dragIndex == 5)) {
-                editParameter(selTrack * kTrackParams + pageParam(page, dragIndex), false);
+                editParameter(tpIndex(selTrack, pageParam(page, dragIndex)), false);
                 if (grouped()) groupEnd(pageParam(page, dragIndex));
                 drag = dkNone; openDestMenu(page - pgLfo1);    // a click (no drag) on DEST / TARGET opens the list
                 return true;
             }
             if (drag == dkTrackKnob && lockStep < 0 && !recording()) {
-                editParameter(selTrack * kTrackParams + pageParam(page, dragIndex), false);
+                editParameter(tpIndex(selTrack, pageParam(page, dragIndex)), false);
                 if (grouped()) groupEnd(pageParam(page, dragIndex));
             }
             recDirty = false;
@@ -3036,7 +3036,7 @@ protected:
             if (drag == dkTempo) editParameter(kGlobalBase + gTEMPO, false);
             if (drag == dkSwing || drag == dkAccent) sendPatternSettings();
             if (drag == (DragKind)dkResize) saveView();
-            if (drag == dkSend && sendG(dragIndex) >= 0) editParameter(kGlobalBase + sendG(dragIndex) + selTrack, false);
+            if (drag == dkSend && sendG(dragIndex) >= 0) editParameter(kGlobalBase + sendIndex(dragIndex), false);
             if (drag == dkGlHold && !glLatch) glHoldSet(false);
             if (drag == dkMFader) editParameter(kGlobalBase + gMORPH, false);
             drag = dkNone; repaint();
@@ -3169,8 +3169,8 @@ protected:
 
         for (int k = 0; k < 10; ++k)
             if (sendG(k) >= 0 && knob(k).in(x, y)) {
-                const uint32_t idx = kGlobalBase + sendG(k) + selTrack;
-                if (dbl) { setParamGesture(idx, globalDefault(sendG(k) + selTrack)); repaint(); return true; }
+                const uint32_t idx = kGlobalBase + sendIndex(k);
+                if (dbl) { setParamGesture(idx, globalDefault(sendIndex(k))); repaint(); return true; }
                 drag = dkSend; dragIndex = k; dragY = y; dragStart = sendValue(k);
                 editParameter(idx, true);
                 repaint(); return true;
@@ -3199,13 +3199,13 @@ protected:
             if (dbl) {
                 if (lockStep >= 0) writeLock(pi, kNoLock);
                 else {
-                    setParamGesture(selTrack * kTrackParams + pi, pi < 8 ? kMachineDefs[machineOf(selTrack)].def[pi] : kFxDefaults[pi - 8]);
-                    for (int t : groupOthers()) setParamGesture(t * kTrackParams + pi, pi < 8 ? kMachineDefs[machineOf(t)].def[pi] : kFxDefaults[pi - 8]);
+                    setParamGesture(tpIndex(selTrack, pi), pi < 8 ? kMachineDefs[machineOf(selTrack)].def[pi] : kFxDefaults[pi - 8]);
+                    for (int t : groupOthers()) setParamGesture(tpIndex(t, pi), pi < 8 ? kMachineDefs[machineOf(t)].def[pi] : kFxDefaults[pi - 8]);
                 }
                 repaint(); return true;
             }
             drag = dkTrackKnob; dragIndex = k; dragY = y; dragStart = knobValue(k); recDirty = false;
-            if (lockStep < 0 && !recording()) { editParameter(selTrack * kTrackParams + pi, true); if (grouped()) groupBegin(pi); }
+            if (lockStep < 0 && !recording()) { editParameter(tpIndex(selTrack, pi), true); if (grouped()) groupBegin(pi); }
             else if (lockStep >= 0 && pat().locks[selTrack][lockStep][pi] == kNoLock) setKnob(k, dragStart);
             repaint(); return true;
         }
@@ -3264,7 +3264,7 @@ protected:
         }
         if (trkCopy().in(x, y)) {   // the steps and the sound of the track
             trackClip = trackToHex(p, selTrack);
-            soundClip.assign(&values[selTrack * kTrackParams], &values[selTrack * kTrackParams] + kTrackParams);
+            soundClip.assign(&values[tpIndex(selTrack, 0)], &values[tpIndex(selTrack, 0)] + kTrackParams);
             soundClipMachine = machineOf(selTrack);
             repaint(); return true;
         }
@@ -3272,7 +3272,7 @@ protected:
             snapshot("paste sound");
             const bool wasR = restoring; restoring = true;
             if (machineOf(selTrack) != soundClipMachine) setMachine(selTrack, soundClipMachine);
-            for (int k = 0; k < kTrackParams; ++k) setParamGesture(selTrack * kTrackParams + k, soundClip[(size_t)k]);
+            for (int k = 0; k < kTrackParams; ++k) setParamGesture(tpIndex(selTrack, k), soundClip[(size_t)k]);
             restoring = wasR;
             repaint(); return true;
         }
@@ -3390,7 +3390,7 @@ protected:
         case dkTrackKnob: setKnob(dragIndex, v); break;
         case dkMFader: { const R f = morphFader(); setParam(kGlobalBase + gMORPH, clampf((ev.pos.getX() / sx - f.x) / f.w * 127.f, 0.f, 127.f)); repaint(); break; }
         case dkLane: laneSet(ev.pos.getX() / sx, y); break;
-        case dkSend: if (sendG(dragIndex) >= 0) setParam(kGlobalBase + sendG(dragIndex) + selTrack, clampf(v, 0.f, 127.f)); repaint(); break;
+        case dkSend: if (sendG(dragIndex) >= 0) setParam(kGlobalBase + sendIndex(dragIndex), clampf(v, 0.f, 127.f)); repaint(); break;
         case dkEuclid: {
             const int n = tlen(selTrack);
             int nv = (int)std::lround(dragStart + (dragY - y) * 0.08f);
@@ -3439,7 +3439,7 @@ protected:
             if (mKnob(k).in(x, y) && masterParam(mpage, k) >= 0) { setMaster(k, gp(masterParam(mpage, k)) + d, true); return true; }
         for (int k = 0; k < 10; ++k) {
             if (knob(k).in(x, y) && sendG(k) >= 0) {
-                setParamGesture(kGlobalBase + sendG(k) + selTrack, clampf(sendValue(k) + d, 0.f, 127.f)); repaint(); return true;
+                setParamGesture(kGlobalBase + sendIndex(k), clampf(sendValue(k) + d, 0.f, 127.f)); repaint(); return true;
             }
             if (knob(k).in(x, y) && euclidSlot(k)) {
                 const int n = tlen(selTrack);
@@ -3452,7 +3452,7 @@ protected:
                 setKitGroup(f, clampi(bank->kit[selTrack][f] + (int)d, 0, kKitMax[f])); return true;
             }
             if (knob(k).in(x, y) && pageParam(page, k) >= 0) {
-                const uint32_t idx = selTrack * kTrackParams + pageParam(page, k);
+                const uint32_t idx = tpIndex(selTrack, pageParam(page, k));
                 const bool gesture = lockStep < 0 && !recording();
                 if (gesture) { editParameter(idx, true); if (grouped()) groupBegin(pageParam(page, k)); }
                 setKnob(k, knobValue(k) + d);
@@ -3694,7 +3694,7 @@ private:
     void fxTabDots()
     {
         bool cho = false;
-        for (int t = 0; t < kTracks; ++t) cho |= gp(gCHO_SEND + t) > 0.5f;
+        for (int t = 0; t < kTracks; ++t) cho |= gp(choSendG(t)) > 0.5f;
         const bool on[kMPages] = {false, false, cho, gp(gGL_CHANCE) > 0.5f || glHoldUi, gp(gMF_ON) > 0.5f && (gp(gMF_HP) > 0.5f || gp(gMF_LP) < 126.5f), bank->glob.linkVoices >= 2, bank->scenes.active(), false};
         for (int i = 0; i < kMPages; ++i)
             if (on[i] && mpage != i) { const R t = mTab(i); beginPath(); circle(t.x + t.w - 8, t.cy(), 3.f); fillColor(th->accent); fill(); }
@@ -3720,7 +3720,8 @@ private:
         if (page != pgEfx) return -1;
         return k == 6 ? gCHO_SEND : (k == 7 ? gCHA_SEND : -1);
     }
-    float sendValue(int k) const { return gp(sendG(k) + selTrack); }
+    int sendIndex(int k) const { return sendG(k) == gCHO_SEND ? choSendG(selTrack) : chaSendG(selTrack); }   // its global index
+    float sendValue(int k) const { return gp(sendIndex(k)); }
 
     // ------------------------------------------------------------------ MORPH tab: scenes A / B, fader, step lane
     R scenePad(int a) const { return {a ? 1066.f : 724.f, 186.f, 92.f, 78.f}; }
@@ -3849,7 +3850,7 @@ private:
         int n = 0;
         for (int s = 0; s < kTracks && n < 8; ++s)
             for (int l = 0; l < kUiLfos && n < 8; ++l) {
-                const float* v = &values[s * kTrackParams];
+                const float* v = &values[tpIndex(s, 0)];
                 if (v[kLfoBase[l] + 1] < 0.5f) continue;                           // depth 0
                 const int trk = lfoTrackIndex((int)std::lround(v[kLfoBase[l] + 5]));
                 if ((trk == 0 ? s : trk - 1) != t) continue;
@@ -3864,7 +3865,7 @@ private:
     // the LFO as the UI imagines it (same rate, wave and phase; not sample-exact): -1..1
     float lfoUiValue(int s, int l) const
     {
-        const float* v = &values[s * kTrackParams];
+        const float* v = &values[tpIndex(s, 0)];
         const int b = kLfoBase[l];
         double ph;
         if (lfoSynced(v[lfoParam(l, 6)])) {

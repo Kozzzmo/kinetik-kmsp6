@@ -10,6 +10,8 @@
 #include <cstring>
 #include <cstdio>
 #include <string>
+#include <cmath>
+#include <algorithm>
 
 namespace kn {
 
@@ -19,7 +21,8 @@ static constexpr int kSceneValues = kGlobalBase + gOUT_STEP;   // every saved pa
 inline bool sceneParam(int i)
 {
     if (i < 0 || i >= kSceneValues) return false;
-    if (i < kGlobalBase) return true;
+    int t, p;
+    if (tpOf(i, t, p)) return true;
     const int g = i - kGlobalBase;
     return g != gPATTERN && g != gPLAY && g != gTEMPO && g != gMORPH;
 }
@@ -27,8 +30,8 @@ inline bool sceneParam(int i)
 // parameters that jump at 50 % instead of blending (types, waves, destinations, models, divisions)
 inline bool morphSwitch(int i)
 {
-    if (i < kGlobalBase) {
-        const int p = i % kTrackParams;
+    int t, p;
+    if (tpOf(i, t, p)) {
         if (p == tpFTYPE) return true;
         constexpr int nl = (int)(sizeof(kLfoBase) / sizeof(kLfoBase[0]));
         for (int l = 0; l < nl; ++l)
@@ -70,10 +73,20 @@ inline bool sceneFromLine(Scenes& s, const char* rest, int maxMachine)
         const int l = hexNibble(p[1]); if (l < 0) return false;
         out = (uint8_t)(h * 16 + l); p += 2; return true;
     };
-    for (int t = 0; t < kTracks; ++t) { if (!byte(mach[t])) return false; if (mach[t] > maxMachine) mach[t] = 0; }
+    // machines: one byte per track (a scene saved with fewer tracks has fewer; the others stay OFF)
+    std::memset(mach, 0, sizeof(mach));
+    for (int t = 0; t < kTracks && *p != ' '; ++t) { if (!byte(mach[t])) return false; if (mach[t] > maxMachine) mach[t] = 0; }
     if (*p != ' ') return false;
     ++p;
-    for (int i = 0; i < kSceneValues; ++i) { if (!byte(val[i])) return false; if (val[i] > 127) val[i] = 127; }
+    // a scene saved by an older version has fewer values (parameters added since): those take their default
+    int got = 0;
+    for (; got < kSceneValues; ++got) {
+        if (hexNibble(p[0]) < 0) break;
+        if (!byte(val[got])) return false;
+        if (val[got] > 127) val[got] = 127;
+    }
+    if (got < kGlobalBase + gECHO_TIME) return false;   // not even the track parameters and the transport
+    for (int i = got; i < kSceneValues; ++i) val[i] = (uint8_t)std::lround(std::min(127.f, globalDefault(i - kGlobalBase)));
     std::memcpy(s.mach[a], mach, sizeof(mach));
     std::memcpy(s.val[a], val, sizeof(val));
     s.set[a] = 1;

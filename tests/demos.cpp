@@ -13,7 +13,7 @@ int main(int argc,char**argv){
   for(int i=1;i<kNumPresets;i++){
     static Engine e; e.~Engine(); new(&e) Engine();
     float vals[kTotalParams]={}; buildPreset(i,vals,e.bank);
-    for(int t=0;t<kTracks;t++)for(int p=0;p<kTrackParams;p++)e.trackParam[t][p]=vals[t*kTrackParams+p];
+    for(int t=0;t<kTracks;t++)for(int p=0;p<kTrackParams;p++)e.trackParam[t][p]=vals[tpIndex(t, p)];
     for(int g=0;g<gOUT_STEP;g++) e.global[g]=vals[kGlobalBase+g];
     e.init(sr);
     // play pattern A01 twice, then A02 twice if it exists

@@ -10,7 +10,7 @@ int main(int argc,char**argv){
     static Engine e; e.~Engine(); new(&e) Engine();
     float vals[kTotalParams]={};
     buildPreset(i,vals,e.bank);
-    for(int t=0;t<kTracks;t++){ e.bank.mute[t]= t!=solo; for(int p=0;p<kTrackParams;p++)e.trackParam[t][p]=vals[t*kTrackParams+p];}
+    for(int t=0;t<kTracks;t++){ e.bank.mute[t]= t!=solo; for(int p=0;p<kTrackParams;p++)e.trackParam[t][p]=vals[tpIndex(t, p)];}
     for(int g=0;g<gOUT_STEP;g++) e.global[g]=vals[kGlobalBase+g];
     e.global[gECHO_LEV]=0; e.global[gREV_LEV]=0;
     e.global[gPLAY]=1; e.init(sr);

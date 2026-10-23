@@ -6,7 +6,8 @@
 
 namespace kn {
 
-static constexpr int kTracks = 6;
+static constexpr int kTracks = 8;         // 0.10: 8 tracks (was 6)
+static constexpr int kLegacyTracks = 6;   // host parameter layout kept from 0.1-0.9: tracks 0-5, globals, then tracks 6-7
 static constexpr int kSteps = 128;
 static constexpr int kPatterns = 16;
 
@@ -62,17 +63,38 @@ enum GlobalParam {
     gMF_HP, gMF_LP, gMF_RESO,          // master filter (after the master FX)
     gCHO_MODEL, gCHO_RATE, gCHO_DEPTH, gCHO_TIME, gCHO_FB, gCHO_WIDTH, gCHO_TONE, gCHO_LEV,   // chorus (send)
     gGL_CHANCE, gGL_SIZE, gGL_LEN, gGL_PITCH, gGL_FADE, gGL_REV, gGL_MIX,              // CHAOS (glitch / beat repeat)
-    gCHO_SEND,                         // + track: chorus send of each track (kTracks parameters)
-    gCHA_SEND = gCHO_SEND + kTracks,   // + track: CHAOS (glitch) send of each track (0.12 / 0.7)
-    gMF_ON = gCHA_SEND + kTracks,      // master filter on / off
+    gCHO_SEND,                         // + track: chorus send of tracks 0-5 (use choSendG(t))
+    gCHA_SEND = gCHO_SEND + kLegacyTracks,   // + track: CHAOS (glitch) send of tracks 0-5 (0.12 / 0.7, use chaSendG(t))
+    gMF_ON = gCHA_SEND + kLegacyTracks,      // master filter on / off
     gMORPH,                            // scene morph A -> B
     gECHO_RTIME, gECHO_DRIVE, gECHO_DUCK, gECHO_FREEZE,   // echo extras (0.13 / 0.8): right time, loop drive, ducking, freeze
+    // 0.10: tracks 7-8 (index 6-7): their chorus / CHAOS sends, then all their track parameters (tpIndex)
+    gCHO_SEND2,
+    gCHA_SEND2 = gCHO_SEND2 + (kTracks - kLegacyTracks),
+    gEXT_TP = gCHA_SEND2 + (kTracks - kLegacyTracks),
+    gEXT_END = gEXT_TP + (kTracks - kLegacyTracks) * kTrackParams - 1,
     // new saved parameters go here, before the outputs (host parameter indices of saved values never move)
     gOUT_STEP, gOUT_LEDS, gOUT_PATTERN,
     kGlobalParams
 };
-static constexpr int kGlobalBase = kTracks * kTrackParams;
+static constexpr int kGlobalBase = kLegacyTracks * kTrackParams;
 static constexpr int kTotalParams = kGlobalBase + kGlobalParams;
+
+// host parameter index of parameter p of track t (tracks 6-7 live after the globals, so older projects keep theirs)
+inline int tpIndex(int t, int p)
+{
+    return t < kLegacyTracks ? t * kTrackParams + p : kGlobalBase + gEXT_TP + (t - kLegacyTracks) * kTrackParams + p;
+}
+// host index -> track parameter; false = a global parameter
+inline bool tpOf(int i, int& t, int& p)
+{
+    if (i >= 0 && i < kGlobalBase) { t = i / kTrackParams; p = i % kTrackParams; return true; }
+    const int e = i - kGlobalBase - gEXT_TP;
+    if (e >= 0 && e < (kTracks - kLegacyTracks) * kTrackParams) { t = kLegacyTracks + e / kTrackParams; p = e % kTrackParams; return true; }
+    return false;
+}
+inline int choSendG(int t) { return t < kLegacyTracks ? gCHO_SEND + t : gCHO_SEND2 + (t - kLegacyTracks); }
+inline int chaSendG(int t) { return t < kLegacyTracks ? gCHA_SEND + t : gCHA_SEND2 + (t - kLegacyTracks); }
 
 // master parameters gECHO_TIME .. gREV_MOD (index g - gECHO_TIME)
 static constexpr int kMasterCount = gGL_MIX - gECHO_TIME + 1;
@@ -96,10 +118,13 @@ static const uint8_t kMasterDefaults[kMasterCount] = {
 };
 
 // default of every saved global parameter (master table, per-track sends, switches)
+inline uint8_t trackParamDefault(int track, int p);
 inline float globalDefault(int g)
 {
+    { int t, p; if (tpOf(kGlobalBase + g, t, p)) return trackParamDefault(t, p); }   // tracks 7-8
+    if (g >= gCHA_SEND2 && g < gCHA_SEND2 + (kTracks - kLegacyTracks)) return 127.f;
     if (g >= gECHO_TIME && g < gECHO_TIME + kMasterCount) return kMasterDefaults[g - gECHO_TIME];
-    if (g >= gCHA_SEND && g < gCHA_SEND + kTracks) return 127.f;   // every track goes to CHAOS
+    if (g >= gCHA_SEND && g < gCHA_SEND + kLegacyTracks) return 127.f;   // every track goes to CHAOS
     if (g == gMF_ON) return 1.f;
     if (g == gECHO_RTIME) return 64.f;
     if (g == gTEMPO) return 120.f;
@@ -128,7 +153,7 @@ static const MachineDef kMachineDefs[kMachines] = {
     {"CHORD", {"WAVE", "CHORD", "VOICES", "INVERT", "SPREAD", "DETUNE", "STRUM", "BRIGHT"}, {20, 10, 26, 0, 0, 30, 0, 90}},
 };
 
-static const uint8_t kDefaultKit[kTracks] = {mSAW, mPULSE, mSUPER, mFM, mWAVE, mPLUCK};
+static const uint8_t kDefaultKit[kTracks] = {mSAW, mPULSE, mSUPER, mFM, mWAVE, mPLUCK, mVOX, mCHORD};
 
 inline uint8_t trackParamDefault(int track, int p)
 {
@@ -256,8 +281,15 @@ static const int8_t kDestOfBin[42] = {0, 1, 2, kDestL1Rate, 3, 4, 5, kDestL1Dept
                                       23, 24, 25, 26, 26, 27, 28, 29, 29, 30, 31, 32};
 inline int lfoDestIndex(int v) { return kDestOfBin[v < 0 ? 0 : (v / 3 > 41 ? 41 : v / 3)]; }
 inline int lfoDestValue(int d) { for (int v = 0; v < 128; ++v) if (lfoDestIndex(v) == d) return v; return 0; }
-inline int lfoTrackIndex(int v) { return v * (kTracks + 1) / 128; } // 0 = this track, 1..6
-inline int lfoTrackValue(int t) { return (t * 128 + kTracks) / (kTracks + 1); }
+// LFO TARGET: 0 = this track, 1..8 = track 1..8. Values saved with 6 tracks (bins of 128/7) keep their track:
+// the last bin (110..127, track 6) is split into 6 / 7 / 8.
+inline int lfoTrackIndex(int v)
+{
+    const int old = v * (kLegacyTracks + 1) / 128;
+    if (old < kLegacyTracks) return old;
+    return v < 116 ? 6 : (v < 122 ? 7 : 8);
+}
+inline int lfoTrackValue(int t) { return t <= kLegacyTracks ? (t * 128 + kLegacyTracks) / (kLegacyTracks + 1) : (t == 7 ? 116 : 122); }
 
 // ---- sequencer ----
 static const float kScaleMult[7] = {1.f, 2.f, 0.75f, 1.5f, 0.5f, 0.25f, 0.125f};

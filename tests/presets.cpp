@@ -7,11 +7,11 @@ int main(){
   for(int i=0;i<kNumPresets;i++){
     static Engine e; e.~Engine(); new(&e) Engine();
     float vals[kTotalParams]={};
-    for(int t=0;t<kTracks;t++)for(int p=0;p<kTrackParams;p++)vals[t*kTrackParams+p]=trackParamDefault(t,p);
+    for(int t=0;t<kTracks;t++)for(int p=0;p<kTrackParams;p++)vals[tpIndex(t, p)]=trackParamDefault(t,p);
     buildPreset(i,vals,e.bank);
     // roundtrip bank serialization
     std::string s=serializeBank(e.bank); Bank b2; if(!deserializeBank(b2,s.c_str())||serializeBank(b2)!=s) printf("SERIALIZE MISMATCH %s\n",kPresets[i].name);
-    for(int t=0;t<kTracks;t++)for(int p=0;p<kTrackParams;p++)e.trackParam[t][p]=vals[t*kTrackParams+p];
+    for(int t=0;t<kTracks;t++)for(int p=0;p<kTrackParams;p++)e.trackParam[t][p]=vals[tpIndex(t, p)];
     for(int g=0;g<gOUT_STEP;g++) e.global[g]=vals[kGlobalBase+g];
     e.global[gPLAY]=1; e.init(sr);
     std::vector<float> L(256),R(256); Transport tp; float pk=0; double rms=0; long n=0; int nan=0;

@@ -70,7 +70,7 @@ public:
 
 protected:
     const char* getLabel() const override { return "KinetikKMSP6"; }
-    const char* getDescription() const override { return "6-track monophonic synthesizer with note sequencer, arpeggiator and parameter locks"; }
+    const char* getDescription() const override { return "8-track monophonic synthesizer with note sequencer, arpeggiator and parameter locks"; }
     const char* getMaker() const override { return "Kinetik"; }
     const char* getLicense() const override { return "Proprietary"; }
     uint32_t getVersion() const override { return d_version(KN_VER_MAJOR, KN_VER_MINOR, KN_VER_MICRO); }
@@ -78,8 +78,8 @@ protected:
     void initParameter(uint32_t index, Parameter& p) override
     {
         p.hints = kParameterIsAutomatable;
-        if ((int)index < kGlobalBase) {
-            const int t = (int)index / kTrackParams, k = (int)index % kTrackParams;
+        int t = 0, k = 0;
+        if (tpOf((int)index, t, k)) {   // track parameters (tracks 7-8 come after the globals)
             char name[48];
             p.symbol = paramSymbol(t, k);
             p.ranges.min = 0; p.ranges.max = 127; p.ranges.def = trackParamDefault(t, k);
@@ -114,9 +114,9 @@ protected:
             p.ranges.min = 0; p.ranges.max = kPatterns - 1; p.ranges.def = 0; return;
         default: break;
         }
-        if (g >= gCHA_SEND && g < gCHA_SEND + kTracks) {   // CHAOS send of each track
+        if ((g >= gCHA_SEND && g < gCHA_SEND + kLegacyTracks) || (g >= gCHA_SEND2 && g < gCHA_SEND2 + kTracks - kLegacyTracks)) {   // CHAOS send of each track
             static char names[kTracks][32], symbols[kTracks][16];
-            const int t = g - gCHA_SEND;
+            const int t = g >= gCHA_SEND2 ? kLegacyTracks + g - gCHA_SEND2 : g - gCHA_SEND;
             std::snprintf(names[t], sizeof(names[t]), "T%02d Chaos Send", t + 1);
             std::snprintf(symbols[t], sizeof(symbols[t]), "t%02d_chaos", t + 1);
             p.name = names[t]; p.symbol = symbols[t];
@@ -137,9 +137,9 @@ protected:
             p.name = "Echo Freeze"; p.symbol = "echo_freeze"; p.ranges.min = 0; p.ranges.max = 1; p.ranges.def = 0;
             p.hints |= kParameterIsBoolean | kParameterIsInteger; return;
         }
-        if (g >= gCHO_SEND && g < gCHO_SEND + kTracks) {   // chorus send of each track
+        if ((g >= gCHO_SEND && g < gCHO_SEND + kLegacyTracks) || (g >= gCHO_SEND2 && g < gCHO_SEND2 + kTracks - kLegacyTracks)) {   // chorus send of each track
             static char names[kTracks][32], symbols[kTracks][16];
-            const int t = g - gCHO_SEND;
+            const int t = g >= gCHO_SEND2 ? kLegacyTracks + g - gCHO_SEND2 : g - gCHO_SEND;
             std::snprintf(names[t], sizeof(names[t]), "T%02d Chorus Send", t + 1);
             std::snprintf(symbols[t], sizeof(symbols[t]), "t%02d_cho", t + 1);
             p.name = names[t]; p.symbol = symbols[t];
@@ -192,7 +192,7 @@ protected:
 
     float getParameterValue(uint32_t index) const override
     {
-        if ((int)index < kGlobalBase) return engine->trackParam[index / kTrackParams][index % kTrackParams];
+        { int t, p; if (tpOf((int)index, t, p)) return engine->trackParam[t][p]; }
         const int g = (int)index - kGlobalBase;
         switch (g) {
         case gOUT_STEP: return (float)engine->outStep;
@@ -226,7 +226,7 @@ protected:
     }
     void applyParameter(uint32_t index, float value)
     {
-        if ((int)index < kGlobalBase) { engine->trackParam[index / kTrackParams][index % kTrackParams] = value; return; }
+        { int t, p; if (tpOf((int)index, t, p)) { engine->trackParam[t][p] = value; return; } }
         const int g = (int)index - kGlobalBase;
         if (g < 0 || g >= gOUT_STEP) return;
         engine->global[g] = value;

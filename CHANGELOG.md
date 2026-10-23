@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+- **8 tracks** (was 6): tracks 7 and 8 start as VOX and CHORD and have everything the others have (sends, LFOs,
+  LINK, MIDI channel, output). Projects and presets made with 6 tracks open unchanged: their tracks 1-6 keep every
+  setting and automation, LFO targets keep their track. The product keeps the name KMSP-6.
+- Fix: scenes saved by 0.7 are loaded again (the parameters added since take their default).
+
 ## 0.9.0
 
 - **Wavetables**: the WAVE and CHORD machines get a TABLE choice (SYNTH page, next to the page name): CLASSIC (the

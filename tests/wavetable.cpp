@@ -80,7 +80,7 @@ int main()
         for (int tab = 0; tab <= kTableUser; ++tab) {
             auto b = std::make_unique<Bank>(); std::vector<float> v(kTotalParams); buildPreset(0, v.data(), *b);
             auto e = std::make_unique<Engine>(); e->init(48000);
-            for (int t = 0; t < kTracks; t++) for (int p = 0; p < kTrackParams; p++) e->trackParam[t][p] = v[t * kTrackParams + p];
+            for (int t = 0; t < kTracks; t++) for (int p = 0; p < kTrackParams; p++) e->trackParam[t][p] = v[tpIndex(t, p)];
             for (int g = 0; g < gOUT_STEP; g++) e->global[g] = v[kGlobalBase + g];
             for (int t = 0; t < kTracks; ++t) b->machine[t] = mOFF;
             b->machine[0] = mWAVE; b->kit[0][kfTable] = (uint8_t)tab;
