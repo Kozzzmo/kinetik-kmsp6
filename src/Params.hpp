@@ -153,10 +153,15 @@ static constexpr int kTrackSpeeds = 8;
 static const float kTrackSpeedMult[kTrackSpeeds] = {1.f, 2.f, 4.f, 1.5f, 0.75f, 0.5f, 0.25f, 0.125f};
 static const char* const kTrackSpeedNames[kTrackSpeeds] = {"1x", "2x", "4x", "3/2x", "3/4x", "1/2x", "1/4x", "1/8x"};
 inline float trackSpeedMult(int v) { return kTrackSpeedMult[v < 0 ? 0 : (v >= kTrackSpeeds ? kTrackSpeeds - 1 : v)]; }
-enum KitField { kfOut = 0, kfMidi, kfTrnsp, kfLegato, kfKeyTrk, kfArpMode, kfArpOct, kfArpSpd, kfArpChord, kfScale, kfRoot, kfSpeed, kKitFields };
-static const char* const kKitNames[kKitFields] = {"OUTPUT", "MIDI CH", "PITCH", "LEGATO", "KEYTRK", "ARP", "OCTAVES", "ARP SPEED", "CHORD", "SCALE", "ROOT", "SPEED"};
-static const int kKitMax[kKitFields] = {3, 16, 48, 1, 4, 5, 3, 5, 9, 15, 11, kTrackSpeeds - 1};
-static const uint8_t kKitDefault[kKitFields] = {0, 0, 24, 0, 2, 0, 0, 1, 0, 0, 0, 0};
+// wavetables of the WAVE and CHORD machines (Wavetable.hpp): TABLE kit field 0..7 = factory, 8 = USER (the track's
+// imported table; CLASSIC while none is loaded)
+static constexpr int kFactoryTables = 8;
+static constexpr int kTableUser = kFactoryTables;
+static const char* const kWaveTableNames[kFactoryTables + 1] = {"CLASSIC", "BASIC", "VOCAL", "ORGAN", "SYNC", "FOLD", "DIGITAL", "FM", "USER"};
+enum KitField { kfOut = 0, kfMidi, kfTrnsp, kfLegato, kfKeyTrk, kfArpMode, kfArpOct, kfArpSpd, kfArpChord, kfScale, kfRoot, kfSpeed, kfTable, kKitFields };
+static const char* const kKitNames[kKitFields] = {"OUTPUT", "MIDI CH", "PITCH", "LEGATO", "KEYTRK", "ARP", "OCTAVES", "ARP SPEED", "CHORD", "SCALE", "ROOT", "SPEED", "TABLE"};
+static const int kKitMax[kKitFields] = {3, 16, 48, 1, 4, 5, 3, 5, 9, 15, 11, kTrackSpeeds - 1, kTableUser};
+static const uint8_t kKitDefault[kKitFields] = {0, 0, 24, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0};
 
 // scales: bit n set = semitone n above the root belongs to the scale
 static constexpr int kScales = 16;
@@ -225,6 +230,7 @@ inline const char* kitValueText(int field, int v, char* buf, int n)
     case kfArpOct: std::snprintf(buf, n, "%d OCT", v + 1); return buf;
     case kfArpSpd: return kArpSpeedNames[v < 0 ? 0 : (v > 5 ? 5 : v)];
     case kfSpeed: return kTrackSpeedNames[v < 0 ? 0 : (v >= kTrackSpeeds ? kTrackSpeeds - 1 : v)];
+    case kfTable: return kWaveTableNames[v < 0 ? 0 : (v > kTableUser ? kTableUser : v)];
     default: return kChords[v < 0 ? 0 : (v > 9 ? 9 : v)].name;
     }
 }

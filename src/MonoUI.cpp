@@ -15,6 +15,9 @@
 #include "MonoShared.hpp"
 #include "MasterFx.hpp"
 #include "Voice.hpp"
+#include "WaveUser.hpp"
+#define DR_WAV_IMPLEMENTATION
+#include "third_party/dr_libs/dr_wav.h"
 #include <cstdlib>
 #include <algorithm>
 #include <dirent.h>
@@ -156,6 +159,11 @@ protected:
     void stateChanged(const char* key, const char* value) override
     {
         if (std::strcmp(key, "bank") == 0) { deserializeBank(*bank, value); repaint(); }
+        if (std::strcmp(key, "waves") == 0) {
+            for (auto& w : uiWaves) w.reset();
+            wav::decodeAll(value ? value : "", [this](int t, UserWavePtr u) { if (t >= 0 && t < kTracks) uiWaves[t] = std::move(u); });
+            scopeReady = false; repaint();
+        }
         if (std::strcmp(key, "skin") == 0 && value && *value) {
             int sk = kDefaultSkin, zm = 0;
             const int n = std::sscanf(value, "%d %d", &sk, &zm);
@@ -430,6 +438,12 @@ protected:
     R machName() const { return {178.f, 156.f, 130.f, 26.f}; }
     R machNext() const { return {310.f, 156.f, 26.f, 26.f}; }
     R lockClear() const { return {596.f, 156.f, 94.f, 24.f}; }
+    // wavetable selector (SYNTH page of WAVE / CHORD): < TABLE > + LOAD
+    bool showTable() const { const int m = machineOf(selTrack); return page == pgSynth && lockStep < 0 && !rec && (m == mWAVE || m == mCHORD); }
+    R tabPrev() const { return {446.f, 156.f, 22.f, 26.f}; }
+    R tabName() const { return {470.f, 156.f, 118.f, 26.f}; }
+    R tabNext() const { return {590.f, 156.f, 22.f, 26.f}; }
+    R tabLoad() const { return {618.f, 157.f, 72.f, 24.f}; }
     R pageTab(int i) const { return {20.f + i * 75.5f, 304.f, 72.f, 28.f}; }
     R knob(int k) const { const int n = slots(); if (k >= n) return {-1000.f, -1000.f, 0.f, 0.f}; const float w = 680.f / n; return {20.f + k * w, 340.f, w, 120.f}; }
     R mTab(int i) const { const float w = (448.f - (kMPages - 1) * 4.f) / kMPages; return {716.f + i * (w + 4.f), 146.f, w, 28.f}; }
@@ -933,6 +947,74 @@ protected:
     }
 
     // ---- SYNTH: oscilloscope of the machine, rendered by a private copy of the voice
+    // ------------------------------------------------------------------ wavetables (TABLE kit field, user tables)
+    UserWavePtr uiWaves[kTracks];
+    bool browseWave = false;
+    std::string waveMsg;
+    const WaveSet* scopeWaves = nullptr;
+    const WaveSet* tableFor(int t) const
+    {
+        const int k = bank->kit[t][kfTable];
+        if (k >= kTableUser) return uiWaves[t] ? &uiWaves[t]->set : &WaveBank::get().set[0];
+        return &WaveBank::get().factory(k);
+    }
+    std::string tableName(int t) const
+    {
+        const int k = bank->kit[t][kfTable];
+        if (k < kTableUser) return kWaveTableNames[k < 0 ? 0 : k];
+        return uiWaves[t] ? "USER: " + uiWaves[t]->name : std::string("USER (EMPTY)");
+    }
+    std::string fitText(std::string s, float size, float w)
+    {
+        useFont(fnMono); fontSize(size);
+        DGL_NAMESPACE::Rectangle<float> bnd;
+        while (s.size() > 3) { textBounds(0, 0, s.c_str(), nullptr, bnd); if (bnd.getWidth() <= w) break; s.pop_back(); }
+        return s;
+    }
+    static std::string fileBase(const std::string& p)
+    {
+        const size_t a = p.find_last_of("/\\");
+        std::string n = a == std::string::npos ? p : p.substr(a + 1);
+        const size_t d = n.find_last_of('.');
+        return d == std::string::npos ? n : n.substr(0, d);
+    }
+    void openWaveBrowser()
+    {
+        FileBrowserOptions o;
+        o.title = "Load a wavetable (WAV: frames of 2048 samples, or one cycle)";
+        browseWave = true;
+        if (!openFileBrowser(o)) { browseWave = false; waveMsg = "File browser not available"; }
+        repaint();
+    }
+    bool loadWaveFile(const std::string& path, int t)
+    {
+        std::vector<uint8_t> bytes;
+        if (FILE* fp = fs::open(path, "rb")) {
+            uint8_t buf[65536]; size_t n;
+            while ((n = std::fread(buf, 1, sizeof(buf), fp)) > 0 && bytes.size() < 64u * 1024 * 1024) bytes.insert(bytes.end(), buf, buf + n);
+            std::fclose(fp);
+        }
+        unsigned int ch = 0, rate = 0; drwav_uint64 frames = 0;
+        float* pcm = bytes.empty() ? nullptr : drwav_open_memory_and_read_pcm_frames_f32(bytes.data(), bytes.size(), &ch, &rate, &frames, nullptr);
+        UserWavePtr u;
+        if (pcm && ch > 0 && frames >= 16) {
+            const size_t n = (size_t)std::min<drwav_uint64>(frames, (drwav_uint64)wav::kMaxFrameLen * 256);
+            std::vector<float> mono(n);
+            for (size_t i = 0; i < n; ++i) { float v = 0.f; for (unsigned c = 0; c < ch; ++c) v += pcm[i * ch + c]; mono[i] = v / (float)ch; }
+            u = wav::make(fileBase(path), mono.data(), mono.size());
+        }
+        if (pcm) drwav_free(pcm, nullptr);
+        if (!u) { waveMsg = "Could not read " + fileBase(path) + " (WAV)"; repaint(); return false; }
+        snapshot("wavetable");
+        uiWaves[t] = u;
+        setState("wav", wav::encodeLine(t, *u).c_str());
+        setKit(t, kfTable, kTableUser);
+        char b[96]; std::snprintf(b, sizeof(b), "%d FRAME%s LOADED", u->set.frames, u->set.frames > 1 ? "S" : "");
+        waveMsg = b; scopeReady = false;
+        repaint();
+        return true;
+    }
+
     MonoVoice scopeVoice; bool scopeReady = false; float scopeKey[9] = {-1, -1, -1, -1, -1, -1, -1, -1, -1};
     std::vector<float> scope;
     void updateScope()
@@ -940,12 +1022,15 @@ protected:
         float key[9];
         for (int i = 0; i < 8; ++i) key[i] = std::round(shownValue(i));
         key[8] = (float)machineOf(selTrack);
-        if (scopeReady && std::equal(key, key + 9, scopeKey)) return;
+        const WaveSet* ws = tableFor(selTrack);
+        if (scopeReady && std::equal(key, key + 9, scopeKey) && ws == scopeWaves) return;
+        scopeWaves = ws;
         std::copy(key, key + 9, scopeKey);
         if (!scopeReady) { scopeVoice.init(48000.f); scopeReady = true; }
         scopeVoice.machine = -1;
         scopeVoice.setMachine((int)key[8]);
         scopeVoice.rng.s = 0x1234567u;
+        scopeVoice.waves = ws;
         scopeVoice.control(key);
         scopeVoice.noteOn(true);
         const int N = 6144;
@@ -1453,7 +1538,14 @@ protected:
         } else if (mode == mdNote && noteStep >= 0) {
             std::snprintf(b, sizeof(b), "STEP %02d: play a key", noteStep + 1);
             label(688, 169, b, 10.5f, th->lock, ALIGN_RIGHT | ALIGN_MIDDLE);
+        } else if (showTable()) {
+            frame(tabPrev(), th->lcdText); label(tabPrev().cx(), tabPrev().cy() + 1, "\xE2\x97\x80", 9.f, th->lcdText, ALIGN_CENTER | ALIGN_MIDDLE, fnSans);
+            frame(tabNext(), th->lcdText); label(tabNext().cx(), tabNext().cy() + 1, "\xE2\x96\xB6", 9.f, th->lcdText, ALIGN_CENTER | ALIGN_MIDDLE, fnSans);
+            const std::string tn = tableName(selTrack);
+            frame(tabName(), th->lcdDim); label(tabName().cx(), tabName().cy() + 1, fitText(tn, 11.f, tabName().w - 8.f).c_str(), 11.f, th->lcdText);
+            frame(tabLoad(), th->lcdText); label(tabLoad().cx(), tabLoad().cy() + 1, "LOAD", 10.f, th->lcdText);
         }
+        if (!waveMsg.empty() && page == pgSynth) label(688, 190, waveMsg.c_str(), 10.f, th->lock, ALIGN_RIGHT | ALIGN_MIDDLE);
 
         const Pattern& p = pat();
         drawPageGraphic({30.f, 190.f, 660.f, 100.f});
@@ -2142,6 +2234,8 @@ protected:
             if (i == kGlobalBase + gPLAY || i == kGlobalBase + gPATTERN) continue;
             std::fprintf(fp, "V %d %.4f\n", i, values[i]);
         }
+        for (int t = 0; t < kTracks; ++t)
+            if (uiWaves[t]) std::fprintf(fp, "WAV %s\n", wav::encodeLine(t, *uiWaves[t]).c_str());
         std::fprintf(fp, "BANK\n%s", serializeBank(*bank).c_str());
         std::fclose(fp);
         return true;
@@ -2160,6 +2254,7 @@ protected:
         std::unique_ptr<Bank> nb(new Bank(*bank));
         int patIdx = 0;
         const bool v1 = all.rfind("KMSP6-PRESET 1", 0) == 0;   // 0.1 layout: 50 params per track, old filter
+        std::string waveText;
         const size_t bankPos = all.find("\nBANK\n");
         const std::string head = all.substr(0, bankPos == std::string::npos ? all.size() : bankPos);
         size_t st = 0;
@@ -2174,7 +2269,14 @@ protected:
                     nv[idx] = idx == kGlobalBase + gTEMPO ? clampf(v, 40.f, 240.f) : clampf(v, 0.f, 127.f);
             }
             std::sscanf(line.c_str(), "PATTERN %d", &patIdx);
+            if (line.rfind("WAV ", 0) == 0) { waveText += line.substr(4); waveText += "\n"; }
             st = e + 1;
+        }
+        if (!waveText.empty()) {     // the preset carries user wavetables: they replace the current ones
+            for (auto& w : uiWaves) w.reset();
+            wav::decodeAll(waveText.c_str(), [this](int t, UserWavePtr u) { if (t >= 0 && t < kTracks) uiWaves[t] = std::move(u); });
+            setState("waves", wav::encodeAll(uiWaves, kTracks).c_str());
+            scopeReady = false;
         }
         if (bankPos != std::string::npos) {
             std::unique_ptr<Bank> fileBank(new Bank());
@@ -2820,6 +2922,11 @@ protected:
     float hovX = -1.f, hovY = -1.f; double hovSince = 0.0, tipBlockUntil = 0.0; bool tipShown = false, tipNone = false; std::string tipText;
     std::string tipAt(float x, float y)
     {
+        if (overlay == ovNone && showTable()) {
+            if (tabPrev().in(x, y) || tabNext().in(x, y) || tabName().in(x, y))
+                return "TABLE - wavetable of the WAVE and CHORD machines: CLASSIC BASIC VOCAL ORGAN SYNC FOLD DIGITAL FM, or USER (a loaded WAV). POSITION scans through it.";
+            if (tabLoad().in(x, y)) return "LOAD - import a WAV as this track's wavetable: frames of 2048 samples (up to 32 are kept), or a single cycle. Saved with the project and with user presets.";
+        }
         for (int k = 0; k < 10; ++k)
             if (knob(k).in(x, y)) {
                 if (sendG(k) == gCHO_SEND) return "CHORUS - how much of this track goes to the master chorus (CHORUS tab). Double-click: off.";
@@ -3023,6 +3130,12 @@ protected:
         if (machPrev().in(x, y)) { setMachineGroup(machineOf(selTrack) - 1); return true; }
         if (machNext().in(x, y)) { setMachineGroup(machineOf(selTrack) + 1); return true; }
         if (machName().in(x, y)) { overlay = ovPicker; repaint(); return true; }
+        if (showTable()) {
+            const int cur = bank->kit[selTrack][kfTable];
+            if (tabPrev().in(x, y)) { setKitGroup(kfTable, cur <= 0 ? kTableUser : cur - 1); waveMsg.clear(); return true; }
+            if (tabNext().in(x, y) || tabName().in(x, y)) { setKitGroup(kfTable, cur >= kTableUser ? 0 : cur + 1); waveMsg.clear(); return true; }
+            if (tabLoad().in(x, y)) { openWaveBrowser(); return true; }
+        }
         if (lockStep >= 0 && lockClear().in(x, y)) {
             std::string c; char b[48];
             for (int st : editTargets(lockStep)) { std::snprintf(b, sizeof(b), "cl %d %d %d\n", editPattern(), selTrack, st); c += b; }
@@ -3508,6 +3621,7 @@ protected:
 
     void uiFileBrowserSelected(const char* filename) override
     {
+        if (browseWave) { browseWave = false; if (filename != nullptr) loadWaveFile(filename, selTrack); return; }
         if (filename == nullptr) return;
         std::string text;
         if (!lic::readFile(filename, text)) { licMsg = "Could not read that file."; repaint(); return; }

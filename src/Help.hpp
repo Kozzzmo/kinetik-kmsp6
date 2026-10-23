@@ -167,6 +167,7 @@ static const char* const kKitHelp[kKitFields] = {
     "Chord built on each sequencer note when the arpeggiator runs (NOTE = the note alone, plus octaves).",
     "Scale: every note of the track (sequence, keyboard, arpeggio) snaps to the nearest note of this scale. OFF = chromatic.",
     "Root note of the scale.",    "Speed of this track against the pattern: 2x plays its steps twice as fast, 1/2x half as fast, 3/2x and 3/4x for triplet feels. Its length still counts steps.",
+    "Wavetable of the WAVE and CHORD machines: 8 built-in tables, or USER = a WAV file loaded with LOAD TABLE.",
 };
 
 } // namespace kn

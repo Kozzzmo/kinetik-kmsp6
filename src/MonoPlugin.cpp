@@ -1,6 +1,7 @@
 // Kinetik KMSP-6 — DPF plugin glue
 #include "DistrhoPlugin.hpp"
 #include "Engine.hpp"
+#include "WaveUser.hpp"
 #include "MonoShared.hpp"
 #include "License.hpp"
 #include <atomic>
@@ -34,7 +35,7 @@ class MonoPlugin : public Plugin, public MonoDirect
 {
 public:
     MonoPlugin()
-        : Plugin(kTotalParams, 0, 3)
+        : Plugin(kTotalParams, 0, 5)
     {
         engine.reset(new Engine());
         master.reset(new Bank());
@@ -174,10 +175,18 @@ protected:
             state.key = "cmd";
             state.defaultValue = "";
             state.label = "Edit command";
-        } else {
+        } else if (index == 2) {
             state.key = "skin";
             state.defaultValue = "";
             state.label = "Interface skin";
+        } else if (index == 3) {
+            state.key = "waves";         // every track's user wavetable, saved with the project
+            state.defaultValue = "";
+            state.label = "User wavetables";
+        } else {
+            state.key = "wav";           // the UI loaded (or removed) one track's wavetable
+            state.defaultValue = "";
+            state.label = "Wavetable command";
         }
     }
 
@@ -230,12 +239,31 @@ protected:
             return String(serializeBank(*master).c_str());
         }
         if (std::strcmp(key, "skin") == 0) return skinState;
+        if (std::strcmp(key, "waves") == 0) {
+            std::lock_guard<std::mutex> lk(masterMutex);
+            UserWavePtr cur[kTracks];
+            for (int t = 0; t < kTracks; ++t) cur[t] = wavSet[t] ? wavPend[t] : wavLive[t];
+            return String(wav::encodeAll(cur, kTracks).c_str());
+        }
         return String("");
     }
 
     void setState(const char* key, const char* value) override
     {
         if (std::strcmp(key, "skin") == 0) { skinState = value ? value : ""; return; }
+        if (std::strcmp(key, "waves") == 0 || std::strcmp(key, "wav") == 0) {
+            const bool all = key[3] == 'e';
+            if (!all && !(value && *value)) return;
+            // decode and build the tables here (not on the audio thread), then hand them over in run()
+            std::vector<std::pair<int, UserWavePtr>> got;
+            wav::decodeAll(value ? value : "", [&](int t, UserWavePtr u) { if (t >= 0 && t < kTracks) got.emplace_back(t, std::move(u)); });
+            std::lock_guard<std::mutex> lk(masterMutex);
+            for (int t = 0; t < kTracks; ++t) wavGrave[t].reset();   // free what the audio thread released
+            if (all) for (int t = 0; t < kTracks; ++t) { wavPend[t].reset(); wavSet[t] = true; }   // a full set replaces everything
+            for (auto& g : got) { wavPend[g.first] = std::move(g.second); wavSet[g.first] = true; }
+            wavDirty.store(true);
+            return;
+        }
         if (std::strcmp(key, "bank") == 0) {
             std::lock_guard<std::mutex> lk(masterMutex);
             if (deserializeBank(*master, value)) dirty.store(0xFFFFu | kKitBit);
@@ -325,6 +353,22 @@ protected:
                 pending.clear();
             }
         }
+        // install new user wavetables (the old ones are freed later, outside the audio thread)
+        if (wavDirty.load(std::memory_order_acquire)) {
+            std::unique_lock<std::mutex> lk(masterMutex, std::try_to_lock);
+            if (lk.owns_lock()) {
+                bool left = false;
+                for (int t = 0; t < kTracks; ++t) {
+                    if (!wavSet[t]) continue;
+                    if (wavGrave[t]) { left = true; continue; }        // wait until the previous one is freed
+                    wavGrave[t] = std::move(wavLive[t]);
+                    wavLive[t] = std::move(wavPend[t]);
+                    wavSet[t] = false;
+                    engine->userWaves[t] = wavLive[t] ? &wavLive[t]->set : nullptr;
+                }
+                wavDirty.store(left);
+            }
+        }
         engine->fill = fillFlag.load();
         engine->recording = recFlag.load();
         if (panicFlag.exchange(false)) { engine->allNotesOff(); engine->resetExpression(); }
@@ -395,6 +439,9 @@ private:
     std::unique_ptr<Bank> master;
     mutable std::mutex masterMutex;
     std::atomic<uint32_t> dirty{0};
+    UserWavePtr wavPend[kTracks], wavLive[kTracks], wavGrave[kTracks];
+    bool wavSet[kTracks] = {};
+    std::atomic<bool> wavDirty{false};
     std::atomic<bool> fillFlag{false}, recFlag{false}, panicFlag{false};
     std::atomic<int> selTrack{0};
     std::atomic<bool> licensed{false};

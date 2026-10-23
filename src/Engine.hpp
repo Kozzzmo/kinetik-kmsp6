@@ -362,6 +362,14 @@ public:
     }
     int soundSource(int t) const { const int m = linkMaster(t); return (m >= 0 && bank.glob.linkCopy) ? m : t; }
     int machineOf(int t) const { return bank.machine[soundSource(t)]; }
+    // wavetable of track t (TABLE kit field of its sound source; USER = the imported table, set by the plugin)
+    const WaveSet* userWaves[kTracks] = {};
+    const WaveSet* waveSetFor(int t) const
+    {
+        const int s = soundSource(t), k = bank.kit[s][kfTable];
+        if (k >= kTableUser) return userWaves[s] ? userWaves[s] : &WaveBank::get().set[0];
+        return &WaveBank::get().factory(k);
+    }
     int noteSource(int t) const { const int m = linkMaster(t); return m >= 0 ? m : t; }   // whose pitch / scale settings apply
     void scaleOf(int t, int& scale, int& root) const
     {
@@ -919,6 +927,7 @@ private:
             const int es = noteSource(t);
             vibPh[t] += 5.5f * (float)n / sr; if (vibPh[t] >= 1.f) vibPh[t] -= 1.f;
             const float expr = midiBend[es] + (midiMod[es] > 0.f ? midiMod[es] * 0.5f * std::sin(kTwoPi * vibPh[t]) : 0.f);
+            tr.voice.waves = waveSetFor(t);
             tr.voice.render(b, (int)n, noteHz(n0 + tr.pitchMod + tr.uniDetune + expr), noteHz(tr.curNote + tr.pitchMod + tr.uniDetune + expr));
             static const float kMachineGain[kMachines] = {0.f, 1.4f, 0.95f, 1.0f, 1.0f, 1.3f, 0.75f, 2.2f, 1.0f, 1.2f};
             const float mg = kMachineGain[machineOf(t) % kMachines];

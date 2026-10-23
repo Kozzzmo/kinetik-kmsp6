@@ -37,14 +37,14 @@ struct MonoVoice {
         const float g = target / std::sqrt(agcEnv + 1e-7f);
         return s * (g < 0.1f ? 0.1f : (g > 4.f ? 4.f : g));
     }
-    const WaveBank* waves = nullptr;
+    const WaveSet* waves = nullptr;   // the track's table (Engine::waveSetFor), CLASSIC by default
 
     void init(float sampleRate)
     {
         sr = sampleRate; isr = 1.f / sr;
         agcA = 1.f - std::exp(-1.f / (0.08f * sr));
         ks.assign(8192, 0.f);
-        waves = &WaveBank::get();
+        waves = &WaveBank::get().set[0];
     }
 
     void setMachine(int m)
@@ -113,10 +113,12 @@ struct MonoVoice {
         // level with harmonics below Nyquist
         int L = 0;
         const float maxH = 0.5f * sr / std::max(f, 1.f);
-        while (L < WaveBank::kLevels - 1 && (float)(1024 >> L) > maxH) ++L;
-        const int f0 = std::max(0, std::min((int)frame, WaveBank::kFrames - 1)), f1 = std::min(f0 + 1, WaveBank::kFrames - 1);
+        while (L < WaveSet::kLevels - 1 && (float)(1024 >> L) > maxH) ++L;
+        const int nf = waves->frames;
+        if (nf != 32) frame *= (float)(nf - 1) / 31.f;   // callers give 0..31 (tables with fewer frames)
+        const int f0 = std::max(0, std::min((int)frame, nf - 1)), f1 = std::min(f0 + 1, nf - 1);
         const float ft = clampf(frame - (float)f0, 0.f, 1.f);
-        const float pos = (p >= 0.f && p < 1.f ? p : 0.f) * WaveBank::kSize;   // never outside the table
+        const float pos = (p >= 0.f && p < 1.f ? p : 0.f) * WaveSet::kSize;   // never outside the table
         const int i = (int)pos; const float fr = pos - (float)i;
         const float* a = waves->table(f0, L); const float* b = waves->table(f1, L);
         const float va = a[i] + (a[i + 1] - a[i]) * fr, vb = b[i] + (b[i + 1] - b[i]) * fr;

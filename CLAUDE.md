@@ -11,7 +11,7 @@ synthesis is original code. Sister product: **Kinetik KDSP-16** (drums), reposit
 | `Params.hpp` | 6 tracks, 128 steps, 16 patterns; 56 lockable params per track: 0–7 machine, AMP 8–15, FILTER 16–23 (CUTOFF RESO TYPE LOW CUT ENV ATK ENV DEC ENV AMT KEY TRK), FX 24–31, LFO1/2/3 at 32/38/44 (RATE DEPTH WAVE MODE DEST TARGET; DEST index 32 = PITCH) + SYNC/PHASE at 50+2l (`lfoParam(l,k)`); machines SAW PULSE SUPER FM WAVE VOX PLUCK NOISE CHORD (`kChordShapeDefs`, 3-8 voices, paraphonic); kit fields OUT MIDI TRNSP(=PITCH) LEGATO KEYTRK(unused, old banks) ARP mode/oct/speed/chord SCALE ROOT; scales `kScaleDefs`; master params incl. ECHO/REVERB MODEL + MOD |
 | `MasterFx.hpp` | master echo (5 models) / reverb (5 models, own decay ranges, ROOM/HALL early reflections, SPRING tank loop) / EQ / compressor / limiter; MOD is model-specific (`kEchoModLabel` / `kReverbModLabel`, UI `masterName()`) — **identical in kinetik-kdsp16** |
 | `Bank.hpp` | like KDSP-16 plus per-step `note` (60 = C3, Ableton naming), `gate` (index into `kGateSteps`) and `chord` (index into `kChords`, played by LINK); `Bank::glob` = global scale + LINK settings; header `KMSP2`; extra commands `n` `g` `h` (chord), `G scale root`, `LK first voices mode copy detune` |
-| `Wavetable.hpp` | 32 band-limited wave frames × 11 mip levels, generated at start-up by FFT |
+| `Wavetable.hpp` | `WaveSet` (up to 32 band-limited frames × 11 mip levels, built by FFT); `WaveBank` = 8 factory tables built at start-up on several threads (CLASSIC = the table before 0.9); `WaveUser.hpp` = user tables (import, state codec) |
 | `Voice.hpp` | `MonoVoice`: the 8 machines (VOX and NOISE have a slow AGC so resonance does not change loudness) |
 | `Engine.hpp` | LINK (`linkMaster`, `pickVoice`, `linkNoteOn/Off`: tracks first..first+N-1 are the voices of the first; POLY / CYCLE / UNISON / RANDOM; COPY = voices use the first track's sound via `soundSource`), global scale (`scaleOf`); sequencer with notes, slide (glide without retrigger), legato, AHDSR, HP+LP filter with AD envelope, 3 LFOs, arpeggiator (sequencer chord or held notes), live note recording queue, master FX, 4 output buses |
 | `MonoShared.hpp` | `MonoDirect` interface: the UI talks to the DSP directly (DISTRHO_PLUGIN_WANT_DIRECT_ACCESS) for live notes, recording queue, held-note display |
@@ -229,3 +229,16 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
 - Logo: the Kinetik "Orbit" mark (`LogoMark.hpp`, shared: `drawOrbitMark`, colours per `LogoStyle`; RISO = black
   badge) + product name in Unbounded Bold (`fnLogo`, `kFontUnbounded` in `Fonts.hpp`, ASCII subset, OFL). The star
   (`drawSparkle`) is no longer used by the logo. J-Slice and KDYN-10 draw the same mark with their toolkits.
+
+## Added in KMSP-6 0.9
+
+- Wavetables: kit field `kfTable` (0..7 factory = `kWaveTableNames` in `Params.hpp`, 8 = USER; default 0 = CLASSIC, so old
+  banks are unchanged). `Engine::waveSetFor(t)` (TABLE of the sound source; USER without a table = CLASSIC) sets
+  `MonoVoice::waves` before each render; `waveRead` maps the 0..31 frame position onto the table's frame count.
+- User tables (`WaveUser.hpp`): `wav::make` (mono PCM -> `UserWave`: frame length guessed 2048 / 1024 / 4096 / 512 / 256,
+  else one cycle; at most 32 frames kept; spectrum via FFT, mip levels), state lines `w<t> name\tframeLen\tbase64` of
+  the packed PCM (`Sample.hpp`, now shared with KDSP-16). Plugin states `waves` (all tracks, saved) and `wav` (one UI
+  command): decoded and built in `setState`, handed to the engine in `run()` with the pending / live / grave scheme of
+  KDSP-16's samples (`engine->userWaves[t]`). UI: `showTable()`, `tabPrev/Name/Next/Load`, `loadWaveFile` (dr_wav),
+  `uiWaves[t]` (scope + names), user presets carry `WAV <line>` lines. Test: `tests/wavetable.cpp` (needs -pthread).
+

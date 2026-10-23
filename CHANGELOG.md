@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0
+
+- **Wavetables**: the WAVE and CHORD machines get a TABLE choice (SYNTH page, next to the page name): CLASSIC (the
+  table so far), BASIC (sine to square), VOCAL (vowels A E I O U), ORGAN (drawbar registrations), SYNC (hard-synced
+  saw), FOLD (wavefolder), DIGITAL (switched harmonics) and FM (two operators). POSITION scans through the table.
+- **Your own wavetables**: LOAD imports a WAV as the track's USER table (frames of 2048 samples, up to 32 kept; 1024,
+  4096, 512, 256 also recognised; a shorter file = a single cycle). It is saved with the project and with user presets.
+- Existing projects and presets sound the same (TABLE = CLASSIC).
+
 ## 0.8.0
 
 - **Echo rework**: three new models, **MULTI-TAP** (four taps before each repeat, scattered left / right; MOD = spacing),
