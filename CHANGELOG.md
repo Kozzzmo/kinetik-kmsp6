@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0
+
+- **MORPH removed**: the MORPH tab (scenes A / B, fader, MORPH steps), the TO SCENE buttons of the presets window and the
+  MORPH destination of the LFOs are gone. Projects that used scenes now play the knobs as they are; an LFO that was set
+  to MORPH does nothing (choose another destination). The "Scene Morph" automation parameter is hidden.
+- NEON skin: active steps of the sequencer in red (accents in a lighter red).
+- Factory presets: "Morph Acid" is now "Acid Drive", "Morph Pad" is now "Choir Pad" (an LFO opens the pad).
+
 ## 0.10.1
 
 - Larger, bolder text: labels and buttons in IBM Plex Mono SemiBold, 8 % larger; knob values and step numbers 15 % larger.

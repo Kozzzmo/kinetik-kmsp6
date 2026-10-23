@@ -152,14 +152,6 @@ struct PB { // preset builder
         }
     }
     void copyPattern(int dst, int src) { b.patterns[dst] = b.patterns[src]; }
-    // morph scene a = the sound built so far, with some parameters changed ({index, value}; index = tpi(t, p) / gpi(g))
-    void scene(int a, std::initializer_list<std::pair<int, int>> changes)
-    {
-        b.scenes.set[a] = 1;
-        for (int t = 0; t < kTracks; ++t) b.scenes.mach[a][t] = b.machine[t];
-        for (int i = 0; i < kSceneValues; ++i) b.scenes.val[a][i] = (uint8_t)clampi((int)std::lround(v[i]), 0, 127);
-        for (const auto& c : changes) if (c.first >= 0 && c.first < kSceneValues) b.scenes.val[a][c.first] = (uint8_t)clampi(c.second, 0, 127);
-    }
     static int tpi(int t, int p) { return tpIndex(t, p); }
     static int gpi(int g) { return kGlobalBase + g; }
     void lane(int pat, std::initializer_list<int> vals)
@@ -540,8 +532,8 @@ static void presetNoiseScapes(PB& b)
 
 // --------------------------------------------------------------------------------------------
 
-// ---- 0.7: presets that show the scenes, CHAOS, chorus and per-track SPEED (voiced with the exponential RESONANCE)
-static void presetMorphAcid(PB& b)
+// ---- 0.7: presets that show CHAOS, chorus and per-track SPEED (voiced with the exponential RESONANCE)
+static void presetAcidDrive(PB& b)
 {
     b.kit(0, mSAW, {0, 0, 64, 0, 64, 64, 0, 0}); b.amp(0, 0, 0, 45, 50, 20); b.flt2(0, 40, 70, 0, 0, 0, 50, 110);
     b.fx(0, tpDIST, 30); b.fx(0, tpPORT, 22); b.fx(0, tpDEL, 25); b.fx(0, tpVOL, 92);
@@ -551,11 +543,9 @@ static void presetMorphAcid(PB& b)
     b.seq(0, 0, "!A1 A1 ~A2 A1 | . A1 ~C2 !A1 | G1 . A1 ~E2 | A1 !A2 . ~G2");
     b.seq(0, 1, ". . A3 . | . . C4 . | . . E4 . | . A3 . G3");
     b.settings(0, 16, 56);
-    b.lane(0, {0, -1, -1, -1, 32, -1, -1, -1, 64, -1, -1, -1, 127, -1, -1, 96});
     b.g(gTEMPO, 132);
-    b.scene(0, {{PB::tpi(0, tpCUTOFF), 30}, {PB::tpi(0, tpRESO), 50}, {PB::tpi(0, tpDIST), 15}, {PB::gpi(gECHO_LEV), 30}});
-    b.scene(1, {{PB::tpi(0, tpCUTOFF), 95}, {PB::tpi(0, tpRESO), 105}, {PB::tpi(0, tpDIST), 75}, {PB::tpi(0, tpFENV), 125},
-                {PB::gpi(gECHO_LEV), 90}, {PB::gpi(gECHO_FB), 80}});
+    b.fx(0, tpCUTOFF, 55); b.fx(0, tpRESO, 85); b.fx(0, tpDIST, 50); b.fx(0, tpFENV, 115);
+    b.g(gECHO_LEV, 60); b.g(gECHO_FB, 65);
 }
 static void presetEnsembleStrings(PB& b)
 {
@@ -599,21 +589,20 @@ static void presetSpeedPhase(PB& b)
     b.settings(0, 16, 50);
     b.g(gTEMPO, 110);
 }
-static void presetMorphPad(PB& b)
+static void presetChoirPad(PB& b)
 {
     b.kit(0, mWAVE, {10, 20, 60, 64, 70, 50, 0, 0}); b.amp(0, 90, 0, 90, 110, 100); b.flt2(0, 70, 20, 0, 10, 40, 70, 64);
     b.fx(0, tpREV, 80); b.fx(0, tpVOL, 80);
     b.kit(1, mVOX, {30, 50, 30, 60, 20, 50, 30, 30}); b.amp(1, 80, 0, 90, 100, 100); b.fx(1, tpREV, 80); b.fx(1, tpVOL, 70);
     b.g(choSendG(0), 80); b.g(choSendG(1), 80); b.g(gCHO_MODEL, chorusModelValue(cmEnsemble)); b.g(gCHO_LEV, 70);
     b.g(gREV_SIZE, 100); b.g(gREV_MODEL, reverbModelValue(rmShimmer));
-    // a slow LFO on track 2 sweeps the MORPH: dark breathing pad <-> bright choir
-    b.lfo(1, 2, 5, 127, 1, 0, kDestMorph);
+    // a slow LFO opens and closes the pad
+    b.lfo(0, 2, 5, 100, 1, 0, tpCUTOFF);
     b.seq(0, 0, "D3 - - - | - - - - | - - - - | - - - - | F3 - - - | - - - - | - - - - | - - - -");
     b.seq(0, 1, "A4 - - - | - - - - | - - - - | - - - - | C5 - - - | - - - - | - - - - | - - - -");
     b.settings(0, 32, 50);
     b.g(gTEMPO, 80);
-    b.scene(0, {{PB::tpi(0, 0), 5}, {PB::tpi(0, tpCUTOFF), 45}, {PB::tpi(1, tpVOL), 30}});
-    b.scene(1, {{PB::tpi(0, 0), 90}, {PB::tpi(0, tpCUTOFF), 105}, {PB::tpi(0, tpRESO), 50}, {PB::tpi(1, tpVOL), 100}, {PB::gpi(gREV_LEV), 90}});
+    b.fx(0, tpCUTOFF, 75); b.fx(1, tpVOL, 70); b.g(gREV_LEV, 75);
 }
 static void presetGlitchBass(PB& b)
 {
@@ -650,11 +639,11 @@ static const PresetDef kPresets[] = {
     {"Plucked Minimal", "strings, clicks and space", presetMinimal},
     {"Electro Funk", "sliding pulse bass, talking vox", presetElectroFunk},
     {"Noise Scapes", "pitched noise, grains and textures", presetNoiseScapes},
-    {"Morph Acid", "scenes A/B: the MORPH steps open and drive the acid line", presetMorphAcid, true},
+    {"Acid Drive", "a driven, resonant acid line with echo", presetAcidDrive, true},
     {"Ensemble Strings", "chords through the ensemble chorus, hall, plucks", presetEnsembleStrings, true},
     {"Chaos Arp", "FM arp repeated and pitched up by CHAOS, bass untouched", presetChaosArp, true},
     {"Speed Phase", "the same pluck line at 1x and 3/2x drifting apart", presetSpeedPhase, true},
-    {"Morph Pad", "an LFO on MORPH turns a dark pad into a bright choir", presetMorphPad, true},
+    {"Choir Pad", "a slow LFO opens and closes a dark choir pad", presetChoirPad, true},
     {"Glitch Bass", "CHAOS stutters and reverses the bass only", presetGlitchBass, true},
 };
 static constexpr int kNumPresets = (int)(sizeof(kPresets) / sizeof(kPresets[0]));

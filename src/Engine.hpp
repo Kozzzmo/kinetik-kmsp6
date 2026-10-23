@@ -169,46 +169,11 @@ public:
         process(outs, frames, tp, notes, nNotes);
     }
 
-    // scene morph: the knobs (trackParam / global) are blended between scene A and B for this block, then restored
-    float morphLfo = 0.f, morphLfoNext = 0.f, morphCur = 0.f; int morphLaneStep = -1;
-    float savedTrack[kTracks][kTrackParams], savedGlobal[kGlobalParams];
-    float morphAmount() const { return morphCur; }
+    // scenes / MORPH were removed in 0.15 / 0.11 (the bank still reads old scene lines, they do nothing)
+    float morphLfo = 0.f, morphLfoNext = 0.f;   // LFOs set to the old MORPH destination write here (unused)
     void process(float* const* outs, uint32_t frames, const Transport& tp, const NoteEvent* notes, uint32_t nNotes)
     {
-        const bool morphing = bank.scenes.active();
-        if (morphing) applyMorph();
         processBlock(outs, frames, tp, notes, nNotes);
-        if (morphing) { std::memcpy(trackParam, savedTrack, sizeof(savedTrack)); std::memcpy(global, savedGlobal, sizeof(savedGlobal)); }
-    }
-    void applyMorph()
-    {
-        std::memcpy(savedTrack, trackParam, sizeof(savedTrack)); std::memcpy(savedGlobal, global, sizeof(savedGlobal));
-        // fader, overridden on steps of the MORPH lane, plus the LFOs sent to MORPH; smoothed per block
-        float target = global[gMORPH] / 127.f;
-        if (outStep >= 0) {
-            const Pattern& P = bank.patterns[curPattern];
-            const int len = P.length ? P.length : 16;
-            const int st = (int)((outStep / kFineSteps) % len);
-            if (P.morph[st] != kNoLock) target = P.morph[st] / 127.f;
-        }
-        target = clampf(target + morphLfo, 0.f, 1.f);
-        morphCur += (target - morphCur) * 0.25f;
-        if (std::fabs(target - morphCur) < 1e-4f) morphCur = target;
-        const Scenes& sc = bank.scenes;
-        const float m = morphCur;
-        for (int i = 0; i < kSceneValues; ++i) {
-            if (!sceneParam(i)) continue;
-            int t = 0, tpar = 0;
-            const bool isTrack = tpOf(i, t, tpar);
-            float* dst = isTrack ? &trackParam[t][tpar] : &global[i - kGlobalBase];
-            if (isTrack && tpar < 8) {   // synth knobs: only if the machine is the same in both scenes
-                const int ma = sc.set[0] ? sc.mach[0][t] : bank.machine[t], mb = sc.set[1] ? sc.mach[1][t] : bank.machine[t];
-                if (ma != mb || ma != bank.machine[t]) continue;
-            }
-            const float a = sc.set[0] ? (float)sc.val[0][i] : *dst, b = sc.set[1] ? (float)sc.val[1][i] : *dst;
-            if (a == b) { *dst = a; continue; }
-            *dst = morphSwitch(i) ? (m < 0.5f ? a : b) : a + (b - a) * m;
-        }
     }
     void processBlock(float* const* outs, uint32_t frames, const Transport& tp, const NoteEvent* notes, uint32_t nNotes)
     {

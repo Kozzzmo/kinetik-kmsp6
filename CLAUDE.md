@@ -257,3 +257,13 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
 
 - Text (0.10.1, same as KDSP-16 0.14.1): `kFontMono` = IBM Plex Mono SemiBold, `textSize()` mono x1.13 x1.08,
   `number()` x1.15 when size <= 16.
+
+## Removed in KDSP-16 0.15 / KMSP-6 0.11 — MORPH (owner's request)
+
+- Scenes A/B, the MORPH fader / tab / step lane, TO SCENE (presets window) and the LFO destination MORPH are removed.
+  Kept for compatibility only: `Scene.hpp` (old `Z` / `z` bank lines are still parsed, no longer written; `Bank::scenes`
+  and `Pattern::morph` stay but nothing reads them), `gMORPH` (host parameter hidden, named "Unused", index kept),
+  `kDestMorph` (in the bins so saved LFO DEST values keep their meaning; shown as "-", not offered in the menu, does
+  nothing). `Engine::process` = `processBlock` (no `applyMorph`). `tests/morph.cpp` now checks that scenes are ignored /
+  not written, CHAOS sends and the old scene-line parser. The 0.12 / 0.7 morph notes above are history.
+- NEON: active step LEDs red `Color(236, 36, 50)`, accents `Color(255, 140, 120)` (drawSequencer, `th->logo == lgNeon`).

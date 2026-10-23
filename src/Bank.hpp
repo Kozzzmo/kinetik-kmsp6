@@ -201,13 +201,11 @@ inline std::string serializeBank(const Bank& b)
     std::snprintf(buf, sizeof(buf), "G %d %d\nLK %d %d %d %d %d\n", b.glob.scale, b.glob.root,
                   b.glob.linkFirst, b.glob.linkVoices, b.glob.linkMode, b.glob.linkCopy, b.glob.linkDetune);
     s += buf;
-    for (int a = 0; a < 2; ++a) if (b.scenes.set[a]) s += sceneLine(b.scenes, a) + "\n";
+    // scenes / MORPH lane: no longer written (feature removed); old lines are still read and ignored
     for (int pi = 0; pi < kPatterns; ++pi) {
         const Pattern& p = b.patterns[pi];
         std::snprintf(buf, sizeof(buf), "P %d %d %d %d %d\n", pi, p.length, p.scale, p.swing, p.accent);
         s += buf;
-        for (int st = 0; st < kSteps; ++st)
-            if (p.morph[st] != kNoLock) { std::snprintf(buf, sizeof(buf), "z %d %d %d\n", pi, st, p.morph[st]); s += buf; }
         for (int t = 0; t < kTracks; ++t)
             if (p.trackLen[t] != 16) { std::snprintf(buf, sizeof(buf), "T %d %d %d\n", pi, t, p.trackLen[t]); s += buf; }
         for (int t = 0; t < kTracks; ++t)
