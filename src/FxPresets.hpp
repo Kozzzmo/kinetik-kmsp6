@@ -27,6 +27,10 @@ inline const std::vector<FxPreset>& fxPresets()
         {fxEcho, "Phone Line", {{gECHO_TIME, fxDiv(d8T)}, {gECHO_FB, 55}, {gECHO_LPF, 100}, {gECHO_HPF, 40}, {gECHO_WIDTH, 40}, {gECHO_LEV, 72}, {gECHO_MODEL, echoModelValue(emLofi)}, {gECHO_MOD, 75}}},
         {fxEcho, "Wide Quarter", {{gECHO_TIME, fxDiv(d4)}, {gECHO_FB, 50}, {gECHO_LPF, 100}, {gECHO_HPF, 20}, {gECHO_WIDTH, 110}, {gECHO_LEV, 62}, {gECHO_MODEL, echoModelValue(emDigital)}, {gECHO_MOD, 90}}},
         {fxEcho, "Runaway", {{gECHO_TIME, fxDiv(d16D)}, {gECHO_FB, 118}, {gECHO_LPF, 75}, {gECHO_HPF, 45}, {gECHO_WIDTH, 90}, {gECHO_LEV, 64}, {gECHO_MODEL, echoModelValue(emTape)}, {gECHO_MOD, 85}}},
+        {fxEcho, "Scatter Taps", {{gECHO_TIME, fxDiv(d4)}, {gECHO_FB, 40}, {gECHO_LPF, 100}, {gECHO_HPF, 25}, {gECHO_WIDTH, 100}, {gECHO_LEV, 62}, {gECHO_MODEL, echoModelValue(emMulti)}, {gECHO_MOD, 60}}},
+        {fxEcho, "Backwards", {{gECHO_TIME, fxDiv(d4)}, {gECHO_FB, 55}, {gECHO_LPF, 95}, {gECHO_HPF, 30}, {gECHO_WIDTH, 80}, {gECHO_LEV, 70}, {gECHO_MODEL, echoModelValue(emReverse)}, {gECHO_MOD, 0}}},
+        {fxEcho, "Smear", {{gECHO_TIME, fxDiv(d8D)}, {gECHO_FB, 80}, {gECHO_LPF, 85}, {gECHO_HPF, 30}, {gECHO_WIDTH, 110}, {gECHO_LEV, 60}, {gECHO_MODEL, echoModelValue(emDiffuse)}, {gECHO_MOD, 70}}},
+        {fxEcho, "Ducked Dub", {{gECHO_TIME, fxDiv(d8D)}, {gECHO_FB, 90}, {gECHO_LPF, 75}, {gECHO_HPF, 40}, {gECHO_WIDTH, 90}, {gECHO_LEV, 74}, {gECHO_MODEL, echoModelValue(emTape)}, {gECHO_MOD, 55}, {gECHO_DRIVE, 50}, {gECHO_DUCK, 80}}},
         // ---- REVERB: DECAY DAMPING GATE LOW CUT PRE-DELAY LEVEL MODEL MOD
         {fxReverb, "Small Room", {{gREV_SIZE, 40}, {gREV_DAMP, 70}, {gREV_GATE, 0}, {gREV_HPF, 25}, {gREV_PRE, 5}, {gREV_LEV, 60}, {gREV_MODEL, reverbModelValue(rmRoom)}, {gREV_MOD, 60}}},
         {fxReverb, "Bright Plate", {{gREV_SIZE, 55}, {gREV_DAMP, 35}, {gREV_GATE, 0}, {gREV_HPF, 35}, {gREV_PRE, 12}, {gREV_LEV, 62}, {gREV_MODEL, reverbModelValue(rmPlate)}, {gREV_MOD, 70}}},

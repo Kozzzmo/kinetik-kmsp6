@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0
+
+- **Echo rework**: three new models, **MULTI-TAP** (four taps before each repeat, scattered left / right; MOD = spacing),
+  **REVERSE** (every repeat plays backwards; MOD blends forward repeats in) and **DIFFUSE** (the repeats smear into a
+  wash; MOD = diffusion). New knobs on the ECHO tab: **R TIME** (right side shorter or longer than the left),
+  **DRIVE** (saturation inside the loop), **DUCK** (the echo backs off while the sound sent to it plays) and a
+  **FREEZE** pad (the echo keeps repeating what it holds). Projects saved before keep their echo model.
+- 4 new echo presets (Scatter Taps, Backwards, Smear, Ducked Dub).
+- **New Kinetik logo**: the "Orbit" mark, in every skin, with a larger product name.
+
 ## 0.7.0
 
 - **Scenes A/B and MORPH** (new MORPH tab): take the current sound as scene A or B (click; right-click empties it),

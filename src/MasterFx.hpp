@@ -11,6 +11,11 @@
 //                    the time, soft grit
 //          PING-PONG left / right bounces                         MOD = OFFSET (right side later: swung bounce)
 //          LO-FI     telephone band, low sample rate, few bits    MOD = CRUSH (sample rate and bits)
+//          MULTI-TAP four taps before each repeat, scattered L/R  MOD = SPACING (how far apart the taps are)
+//          REVERSE   every repeat plays backwards                 MOD = BLEND (forward repeats mixed in)
+//          DIFFUSE   repeats smear into a wash (allpass loop)     MOD = DIFFUSION
+//   + every model: R TIME (right side shorter / longer), DRIVE (saturation in the loop), DUCK (the echo backs off
+//     while the sent sound plays), FREEZE (the loop holds what it has, no new input)
 //   reverb ROOM      short, strong early reflections               MOD = EARLY (reflections vs tail)
 //          PLATE     instant dense build-up, bright, no echoes     MOD = BRIGHT
 //          HALL      long, wide, big early field, lush motion      MOD = MOTION (modulation depth)
@@ -28,15 +33,18 @@ namespace kn {
 
 inline int clampMI(int v, int n) { return v < 0 ? 0 : (v >= n ? n - 1 : v); }
 
-enum EchoModel { emDigital, emTape, emBbd, emPingPong, emLofi, kEchoModels };
-static const char* const kEchoModelNames[kEchoModels] = {"DIGITAL", "TAPE", "BBD", "PING-PONG", "LO-FI"};
-static const char* const kEchoModLabel[kEchoModels] = {"SPREAD", "WOW", "CHORUS", "OFFSET", "CRUSH"};
+enum EchoModel { emDigital, emTape, emBbd, emPingPong, emLofi, emMulti, emReverse, emDiffuse, kEchoModels };
+static const char* const kEchoModelNames[kEchoModels] = {"DIGITAL", "TAPE", "BBD", "PING-PONG", "LO-FI", "MULTI-TAP", "REVERSE", "DIFFUSE"};
+static const char* const kEchoModLabel[kEchoModels] = {"SPREAD", "WOW", "CHORUS", "OFFSET", "CRUSH", "SPACING", "BLEND", "DIFFUSION"};
+// MODEL knob: 8 bins of 16 values; the values saved before 0.13 (5 models: 0, 26, 52, 77, 103) keep their model
+static const int8_t kEchoModelOfBin[8] = {emDigital, emTape, emMulti, emBbd, emPingPong, emReverse, emLofi, emDiffuse};
+static const int8_t kEchoModelOrder[kEchoModels] = {emDigital, emTape, emMulti, emBbd, emPingPong, emReverse, emLofi, emDiffuse};   // knob order
 enum ReverbModel { rmRoom, rmPlate, rmHall, rmSpring, rmShimmer, kReverbModels };
 static const char* const kReverbModelNames[kReverbModels] = {"ROOM", "PLATE", "HALL", "SPRING", "SHIMMER"};
 static const char* const kReverbModLabel[kReverbModels] = {"EARLY", "BRIGHT", "MOTION", "DRIP", "SHIMMER"};
-inline int echoModelIndex(int v) { return clampMI(v * kEchoModels / 128, kEchoModels); }
+inline int echoModelIndex(int v) { return kEchoModelOfBin[clampMI(v / 16, 8)]; }
 inline int reverbModelIndex(int v) { return clampMI(v * kReverbModels / 128, kReverbModels); }
-inline int echoModelValue(int i) { return (i * 128 + kEchoModels - 1) / kEchoModels; }
+inline int echoModelValue(int m) { for (int b = 0; b < 8; ++b) if (kEchoModelOfBin[b] == m) return b * 16; return 0; }
 inline int reverbModelValue(int i) { return (i * 128 + kReverbModels - 1) / kReverbModels; }
 
 // return level of the echo / reverb: 0 .. about +10 dB above the old maximum (square law, 64 = unity-ish)
@@ -70,6 +78,9 @@ static const char* const kEchoModelInfo[kEchoModels] = {
     "bucket-brigade: dark and gritty - MOD = chorus",
     "repeats bounce left / right - MOD delays the right side",
     "telephone band, low sample rate - MOD = crush",
+    "four taps before each repeat, scattered left / right - MOD = spacing",
+    "every repeat plays backwards - MOD blends forward repeats in",
+    "repeats smear into a wash - MOD = diffusion",
 };
 static const char* const kReverbModelInfo[kReverbModels] = {
     "small room, close reflections - MOD = early reflections",
@@ -96,6 +107,7 @@ public:
         shim.assign(4096, 0.f);
         preBuf.assign((size_t)(sr * 0.36f) + 4, 0.f);     // pre-delay (0.2 s) + early reflections (0.12 s)
         choL.assign((size_t)(sr * 0.07f) + 8, 0.f); choR.assign(choL.size(), 0.f);
+        for (int k = 0; k < kEchoDiff; ++k) { edL[k].assign((size_t)(kEchoDiffMs[k] * 0.001f * sr) + 4, 0.f); edR[k].assign((size_t)(kEchoDiffMs[k] * 1.13f * 0.001f * sr) + 4, 0.f); }
         glL.assign((size_t)(sr * 4.f) + 8, 0.f); glR.assign(glL.size(), 0.f);   // one slice: up to a quarter note at 20 BPM
         revModel = -1;
         reset();
@@ -110,6 +122,7 @@ public:
         echoLpL = echoLpR = echoHpL = echoHpR = echoLp2L = echoLp2R = 0.f;
         holdL = holdR = 0.f; holdCnt = 0; wowPh = flutPh = modPh = chorPh = 0.f; drift = driftT = 0.f; driftCnt = 0;
         echoDelay = 1000.f;
+        clearEchoExtras();
         std::fill(choL.begin(), choL.end(), 0.f); std::fill(choR.begin(), choR.end(), 0.f);
         choW = 0; choPh = choVib = choFbL = choFbR = choLpL = choLpR = choHpL = choHpR = 0.f; choQuiet = 0.0; choAwake = true;
         glW = glStart = glPos = 0; glActive = false; glPrevBeat = glFreeBeat = 0.0; glLpL = glLpR = 0.f;
@@ -131,6 +144,7 @@ public:
         const uint32_t esz = (uint32_t)echoL.size();
         float targetDelay = (float)(kEchoBeats[div] * 60.0 / std::max(20.f, bpm) * sr);
         targetDelay = clampf(targetDelay, 8.f, (float)esz / 1.6f - 64.f);
+        if (em == emReverse) targetDelay = std::min(targetDelay, (float)esz / 2.4f - 64.f);   // reverse reads two windows back
         const float fb = std::min(em == emTape ? 1.08f : 1.0f, g[gECHO_FB] / 127.f * 1.05f);
         float lpHz = expmap(g[gECHO_LPF] / 127.f, 500.f, 20000.f);
         float hpHz = expmap(g[gECHO_HPF] / 127.f, 20.f, 3000.f);
@@ -172,7 +186,21 @@ public:
             holdN = 2 + (int)(emod * 10.f);                   // 24 kHz .. 4 kHz
             bits = std::exp2(9.f - 4.f * emod);                // 512 .. 32 levels per unit (quiet sends stay audible)
             break;
+        case emMulti: case emReverse: break;
+        case emDiffuse:
+            lpHz = std::min(lpHz, 12000.f);
+            break;
         }
+        // extras of every model
+        const float rTime = 1.f + (g[gECHO_RTIME] - 64.f) / 128.f;          // right side x0.5 .. x1.5
+        const float eDrive = g[gECHO_DRIVE] / 127.f;
+        if (eDrive > 0.001f) sat = std::max(sat, 1.f + 5.f * eDrive);
+        const bool freeze = g[gECHO_FREEZE] > 0.5f;
+        const float duckAmt = g[gECHO_DUCK] / 127.f;
+        const float duckAtk = std::exp(-1.f / (0.002f * sr)), duckRel = std::exp(-1.f / (0.25f * sr));
+        const float tapSpace = 0.12f + 0.2f * emod;                           // MULTI-TAP
+        const float diffG = 0.45f + 0.3f * emod;                              // DIFFUSE
+        const float revBlend = em == emReverse ? 0.8f * emod : 0.f;           // REVERSE: forward repeats mixed in
         const float lpA = std::exp(-kTwoPi * lpHz / sr);
         const float hpA = std::exp(-kTwoPi * hpHz / sr);
         const float w = em == emPingPong ? 1.f : g[gECHO_WIDTH] / 127.f;
@@ -270,7 +298,7 @@ public:
             echoTail = dMax * (repeats + 2.0);
         }
         const double revTail = (double)psz + (double)ssz + rt * sr * 2.0 * (rm == rmShimmer ? 3.0 : 1.0) + 8192.0;
-        const bool echoOn = echoQuiet <= echoTail, revOn = revQuiet <= revTail;
+        const bool echoOn = freeze || echoQuiet <= echoTail, revOn = revQuiet <= revTail;
         float pkC = 0.f;
         for (uint32_t i = 0; i < n; ++i) pkC = std::max(pkC, std::max(std::fabs(sendCL[i]), std::fabs(sendCR[i])));
         choQuiet = pkC > kQuiet ? 0.0 : choQuiet + n;
@@ -284,6 +312,7 @@ public:
         if (!echoOn && echoAwake) {
             std::fill(echoL.begin(), echoL.end(), 0.f); std::fill(echoR.begin(), echoR.end(), 0.f);
             echoLpL = echoLpR = echoHpL = echoHpR = echoLp2L = echoLp2R = 0.f; holdL = holdR = 0.f;
+            clearEchoExtras();
         }
         if (!revOn && revAwake) {
             clearReverb(); std::fill(preBuf.begin(), preBuf.end(), 0.f);
@@ -313,8 +342,40 @@ public:
             } else {
                 dR = echoDelay * rRatio;
             }
+            dR *= rTime;
             dl = readFrac(echoL, esz, (float)echoW - d);
             dr = readFrac(echoR, esz, (float)echoW - dR);
+            float outEL = dl, outER = dr;                      // what is heard (the loop is fed from dl / dr)
+            if (em == emMulti) {
+                // taps before the main repeat, alternately left and right, quieter and quieter
+                const float t1L = readFrac(echoL, esz, (float)echoW - d * (1.f - tapSpace));
+                const float t2R = readFrac(echoR, esz, (float)echoW - dR * (1.f - 2.f * tapSpace));
+                const float t3L = readFrac(echoL, esz, (float)echoW - d * (1.f - 3.f * tapSpace));
+                const float t1R = readFrac(echoR, esz, (float)echoW - dR * (1.f - tapSpace));
+                outEL = 0.7f * dl + 0.45f * t1L + 0.3f * t3L + 0.2f * t2R;
+                outER = 0.7f * dr + 0.55f * t1R + 0.35f * t2R + 0.15f * t1L;
+            } else if (em == emReverse) {
+                // two grains, half a window apart, each reading the previous window backwards (triangle windows sum to 1)
+                const uint32_t D = (uint32_t)std::max(64.f, d), DR = (uint32_t)std::max(64.f, dR);
+                if (++revCnt >= D) revCnt = 0;
+                if (++revCntR >= DR) revCntR = 0;
+                auto grainRead = [&](const std::vector<float>& b, uint32_t c, uint32_t W) {
+                    const uint32_t c2 = (c + W / 2) % W;
+                    const float w1 = 1.f - std::fabs(2.f * c / W - 1.f), w2 = 1.f - std::fabs(2.f * c2 / W - 1.f);
+                    return b[(echoW + 2 * esz - 1 - 2 * c) % esz] * w1 + b[(echoW + 2 * esz - 1 - 2 * c2) % esz] * w2;
+                };
+                const float rl = grainRead(echoL, revCnt, D), rr = grainRead(echoR, revCntR, DR);
+                outEL = rl * (1.f - revBlend) + dl * revBlend; outER = rr * (1.f - revBlend) + dr * revBlend;
+                dl = outEL; dr = outER;                          // the reversed repeats feed the loop
+            }
+            if (freeze) {   // the loop keeps what it holds: no input, no filtering, full feedback
+                // whole-sample reads: an interpolated read would dull the loop a little on every pass
+                const uint32_t fL = (uint32_t)std::lround(echoDelay), fR = (uint32_t)std::lround(echoDelay * (em == emBbd || em == emTape ? 1.f : rRatio) * rTime);
+                echoL[echoW] = echoL[(echoW + esz - fL) % esz];
+                echoR[echoW] = echoR[(echoW + esz - fR) % esz];
+                echoW = (echoW + 1) % esz;
+                dl = outEL; dr = outER;
+            } else {
             float inL, inR;
             if (em == emPingPong) {
                 inL = 0.5f * (sendDL[i] + sendDR[i]) + fb * dr;   // the input enters on the left only
@@ -337,12 +398,22 @@ public:
                 if (--holdCnt <= 0) { holdCnt = holdN; holdL = std::round(yl * bits) / bits; holdR = std::round(yr * bits) / bits; }
                 yl = holdL; yr = holdR;
             }
+            if (em == emDiffuse)   // each pass through the loop gets smeared a little more
+                for (int k = 0; k < kEchoDiff; ++k) { yl = allpass(edL[k], edPosL[k], (uint32_t)edL[k].size(), yl, diffG); yr = allpass(edR[k], edPosR[k], (uint32_t)edR[k].size(), yr, diffG); }
             if (sat > 1.f) {   // tape: a little asymmetry (even harmonics)
                 const float as = em == emTape ? 0.12f : 0.f;
                 yl = std::tanh((yl + as * yl * yl) * sat) / sat; yr = std::tanh((yr + as * yr * yr) * sat) / sat;
             }
             echoL[echoW] = yl; echoR[echoW] = yr;
             echoW = (echoW + 1) % esz;
+            dl = outEL; dr = outER;
+            }
+            if (duckAmt > 0.f) {   // DUCK: the echo backs off while the sent sound plays
+                const float a = 0.5f * (std::fabs(sendDL[i]) + std::fabs(sendDR[i]));
+                duckEnv = a > duckEnv ? a + duckAtk * (duckEnv - a) : a + duckRel * (duckEnv - a);
+                const float gd = 1.f / (1.f + duckAmt * 14.f * duckEnv);
+                dl *= gd; dr *= gd;
+            }
             }
 
             float outRL = 0.f, outRR = 0.f;
@@ -599,6 +670,15 @@ private:
     float revModCur[8] = {}, revModInc[8] = {}; int revModCnt = 0;
     double echoQuiet = 0.0, revQuiet = 0.0; bool echoAwake = true, revAwake = true;
     DriveAA drvL, drvR;   // anti-aliased master DRIVE
+    static constexpr int kEchoDiff = 3;
+    static constexpr float kEchoDiffMs[kEchoDiff] = {7.3f, 11.9f, 17.1f};
+    std::vector<float> edL[kEchoDiff], edR[kEchoDiff]; uint32_t edPosL[kEchoDiff] = {}, edPosR[kEchoDiff] = {};
+    uint32_t revCnt = 0, revCntR = 0; float duckEnv = 0.f;
+    void clearEchoExtras()
+    {
+        for (int k = 0; k < kEchoDiff; ++k) { std::fill(edL[k].begin(), edL[k].end(), 0.f); std::fill(edR[k].begin(), edR[k].end(), 0.f); edPosL[k] = edPosR[k] = 0; }
+        revCnt = revCntR = 0; duckEnv = 0.f;
+    }
     std::vector<float> choL, choR; uint32_t choW = 0;
     float choPh = 0, choVib = 0, choFbL = 0, choFbR = 0, choLpL = 0, choLpR = 0, choHpL = 0, choHpR = 0; double choQuiet = 0.0; bool choAwake = true;
     std::vector<float> glL, glR; uint32_t glW = 0, glStart = 0, glPos = 0, glSlice = 64, glLen = 0; int glRepeat = -1;

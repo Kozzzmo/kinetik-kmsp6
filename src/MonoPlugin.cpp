@@ -129,6 +129,13 @@ protected:
         if (g == gMORPH) {
             p.name = "Scene Morph"; p.symbol = "morph"; p.ranges.min = 0; p.ranges.max = 127; p.ranges.def = 0; return;
         }
+        if (g == gECHO_RTIME) { p.name = "Echo R Time"; p.symbol = "echo_rtime"; p.ranges.min = 0; p.ranges.max = 127; p.ranges.def = 64; return; }
+        if (g == gECHO_DRIVE) { p.name = "Echo Drive"; p.symbol = "echo_drive"; p.ranges.min = 0; p.ranges.max = 127; p.ranges.def = 0; return; }
+        if (g == gECHO_DUCK) { p.name = "Echo Duck"; p.symbol = "echo_duck"; p.ranges.min = 0; p.ranges.max = 127; p.ranges.def = 0; return; }
+        if (g == gECHO_FREEZE) {
+            p.name = "Echo Freeze"; p.symbol = "echo_freeze"; p.ranges.min = 0; p.ranges.max = 1; p.ranges.def = 0;
+            p.hints |= kParameterIsBoolean | kParameterIsInteger; return;
+        }
         if (g >= gCHO_SEND && g < gCHO_SEND + kTracks) {   // chorus send of each track
             static char names[kTracks][32], symbols[kTracks][16];
             const int t = g - gCHO_SEND;

@@ -8,7 +8,7 @@ using DGL_NAMESPACE::Color;
 
 enum LogoStyle { lgSerif, lgRiso, lgNeon, lgClassic };
 enum KnobStyle { ksTicks, ksArcThick, ksArc };
-enum FontId { fnSans, fnSerif, fnSerifItalic, fnMono, fnBlack, kFontCount };
+enum FontId { fnSans, fnSerif, fnSerifItalic, fnMono, fnBlack, fnLogo, kFontCount };   // fnLogo = Unbounded Bold
 
 struct Theme {
     const char* name;

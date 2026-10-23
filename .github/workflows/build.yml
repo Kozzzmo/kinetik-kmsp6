@@ -188,6 +188,7 @@ jobs:
           g++ -O2 -std=c++17 tests/regress.cpp -o /tmp/regress-test && /tmp/regress-test   # sound of every factory preset
           g++ -O2 -std=c++17 tests/speed.cpp -o /tmp/speed-test && /tmp/speed-test          # per-track SPEED
           g++ -O2 -std=c++17 tests/morph.cpp -o /tmp/morph-test && /tmp/morph-test          # scenes, LFO -> MORPH, CHAOS sends
+          g++ -O2 -std=c++17 tests/echo.cpp -o /tmp/echo-test && /tmp/echo-test             # echo models, R TIME / DRIVE / DUCK / FREEZE
           ./scripts/check-shared.sh                                                  # files shared with the sister plug-in
       - name: Package
         run: |

@@ -6,7 +6,8 @@ set -e
 cd "$(dirname "$0")/.."
 FILES="src/MasterFx.hpp src/Skins.hpp src/Fonts.hpp src/Dsp.hpp src/Updater.hpp src/Updater.cpp src/License.hpp
 src/FsUtf8.hpp src/MidiFile.hpp src/third_party/monocypher/monocypher.c src/third_party/monocypher/monocypher.h
-src/third_party/monocypher/monocypher-ed25519.c src/third_party/monocypher/monocypher-ed25519.h tests/regress.cpp tests/speed.cpp tests/morph.cpp src/Scene.hpp src/FxPresets.hpp"
+src/third_party/monocypher/monocypher-ed25519.c src/third_party/monocypher/monocypher-ed25519.h tests/regress.cpp tests/speed.cpp tests/morph.cpp src/Scene.hpp src/FxPresets.hpp
+src/LogoMark.hpp tests/echo.cpp fonts/OFL-Unbounded.txt"
 if [ -n "$1" ]; then
     bad=0
     for f in $FILES; do

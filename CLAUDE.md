@@ -33,7 +33,7 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
 - Legal red lines: no Elektron names, firmware, samples, graphics or trade dress ("Machinedrum", "Monomachine",
   "Elektron" never appear in product text); no presets named after real artists; no VST logo (text mention only).
 - UI preferences the owner validated: English UI; large readable text (labels use `textSize()` floor 9.5 px ×1.13
-  mono); one logo for every skin (serif italic "Kinetik" + four-point star); **NEON** is the default skin;
+  mono); one logo for every skin (the "Orbit" mark + product name in Unbounded, see 0.13 / 0.8); **NEON** is the default skin;
   machine names without prefixes; no instruction text lines in the lower part of the window; window resizable
   (zoom buttons 80–200 % + drag grip); SAVE AS PRESET under PRESETS; factory "Init" = base params + empty
   sequencer; RANDOMIZE (sound / sequence / pattern / everything) with UNDO; REC records knob moves as locks.
@@ -215,3 +215,17 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
 - Signing switches on by itself when the repository secrets exist (listed at the top of the workflow):
   Developer ID + notarization on macOS, `scripts/sign-windows.sh` (osslsigncode, .pfx) on Windows.
 - `EULA.txt` (draft with [PLACEHOLDERS] the owner must fill) and `THIRD_PARTY_NOTICES.txt` ship in every package.
+
+## Added in KDSP-16 0.13 / KMSP-6 0.8 (both plug-ins)
+
+- Echo (`MasterFx.hpp`): 8 models; MODEL knob = 8 bins of 16 values (`kEchoModelOfBin`) so the pre-0.13 values
+  (0, 26, 52, 77, 103 = 5 models) keep their model. MULTI-TAP (taps at d·(1 - k·spacing), output only), REVERSE (two
+  triangular grains reading the previous window backwards; delay limited to esz / 2.4; the reversed signal feeds the
+  loop), DIFFUSE (3 allpasses per channel inside the loop). New saved globals after `gMORPH`: `gECHO_RTIME` (default
+  64, right time x0.5..x1.5), `gECHO_DRIVE`, `gECHO_DUCK` (envelope of the echo send), `gECHO_FREEZE` (0/1: the loop
+  rewrites itself with whole-sample reads, no input; keeps the echo awake). ECHO tab = 12 slots, 6 per row
+  (`mSlots()`, `mKnob(k)` depends on `mpage`), slot 12 = FREEZE pad. Echo presets reset the extras they do not set.
+  Test: `tests/echo.cpp` (shared).
+- Logo: the Kinetik "Orbit" mark (`LogoMark.hpp`, shared: `drawOrbitMark`, colours per `LogoStyle`; RISO = black
+  badge) + product name in Unbounded Bold (`fnLogo`, `kFontUnbounded` in `Fonts.hpp`, ASCII subset, OFL). The star
+  (`drawSparkle`) is no longer used by the logo. J-Slice and KDYN-10 draw the same mark with their toolkits.
