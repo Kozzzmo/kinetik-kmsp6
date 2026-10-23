@@ -580,7 +580,7 @@ protected:
     static float textSize(float size, int font)
     {
         const float s = std::max(size, 9.5f);
-        return font == fnMono ? s * 1.13f : s * 1.08f;
+        return font == fnMono ? s * 1.13f * 1.08f : s * 1.08f;   // labels: SemiBold, 8 % larger (owner's choice D)
     }
     // mono / label text (letter-spaced in the retro skins)
     void label(float x, float y, const char* s, float size, const Color& c, int align = ALIGN_CENTER | ALIGN_MIDDLE, int font = -1)
@@ -624,7 +624,8 @@ protected:
         if (s == nullptr || *s == '\0') return;
         const int f = font < 0 ? th->fontNum : font;
         useFont(f);
-        const float sz = f == fnSerif || f == fnSerifItalic ? size * 1.25f : (f == fnBlack ? size * 0.95f : size);
+        float sz = f == fnSerif || f == fnSerifItalic ? size * 1.25f : (f == fnBlack ? size * 0.95f : size);
+        if (size <= 16.f) sz *= 1.15f;   // small values (knobs, steps) 15 % larger; big displays unchanged
         fontSize(sz); textAlign(align);
         if (th->glow) {
             fontBlur(sz * 0.18f); fillColor(Color(c, Color(0, 0, 0, 0.f), 0.35f)); text(x, y, s, nullptr);

@@ -124,5 +124,32 @@ inline std::vector<std::string> list(const std::string& dir, const std::string& 
     return out;
 }
 
+// sub-folder names (not paths) of dir ("." / ".." and hidden folders left out)
+inline std::vector<std::string> listDirs(const std::string& dir)
+{
+    std::vector<std::string> out;
+#ifdef _WIN32
+    _wfinddata_t fd;
+    const intptr_t h = _wfindfirst(widen(dir + "*").c_str(), &fd);
+    if (h == -1) return out;
+    do {
+        const std::string n = narrow(fd.name);
+        if ((fd.attrib & _A_SUBDIR) && !n.empty() && n[0] != '.') out.push_back(n);
+    } while (_wfindnext(h, &fd) == 0);
+    _findclose(h);
+#else
+    if (DIR* d = opendir(dir.c_str())) {
+        while (dirent* e = readdir(d)) {
+            const std::string n = e->d_name;
+            if (n.empty() || n[0] == '.') continue;
+            struct stat st;
+            if (stat((dir + n).c_str(), &st) == 0 && S_ISDIR(st.st_mode)) out.push_back(n);
+        }
+        closedir(d);
+    }
+#endif
+    return out;
+}
+
 } // namespace fs
 } // namespace kn

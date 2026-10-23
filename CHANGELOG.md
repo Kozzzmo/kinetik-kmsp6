@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.1
+
+- Larger, bolder text: labels and buttons in IBM Plex Mono SemiBold, 8 % larger; knob values and step numbers 15 % larger.
+
 ## 0.10.0
 
 - **8 tracks** (was 6): tracks 7 and 8 start as VOX and CHORD and have everything the others have (sends, LFOs,

@@ -254,3 +254,6 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
 - Scenes: machine bytes and values may be shorter (older lines), see `sceneFromLine`. Engine `applyMorph` uses `tpOf`.
 - UI: track buttons 142.5 px wide, LINK diagram sized from `kTracks`, MIDI export channels 1-8.
 - Test: `tests/tracks8.cpp` (0.9 indices unchanged, round trip, LFO targets, track 8 plays, 6-track bank loads).
+
+- Text (0.10.1, same as KDSP-16 0.14.1): `kFontMono` = IBM Plex Mono SemiBold, `textSize()` mono x1.13 x1.08,
+  `number()` x1.15 when size <= 16.
