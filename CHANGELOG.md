@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.12.0
+
+- **Knobs moved by an LFO**: the knob's arc (or ring of dots) now follows the value the LFO gives, in the LFO's colour, while
+  the pointer stays on the value you set. The L1 / L2 / L3 badge takes the same colour, and so does the wave on the LFO page.
+- **LFO colours**: COLOR on each LFO page opens eight colours (green, yellow, white by default; also cyan, orange, violet, red, blue);
+  the choice is kept for every project and new instance.
+- **Presets reworked**: 32 factory presets (8 new: Full Band, Vowel Sequence, Sync Lead, Fold Bass, Organ Groove,
+  Digital Arp, FM Keys, Reverse Pads — using the wavetables and the 8 tracks), sorted by style with category buttons in
+  the browser; the search also finds styles. Every factory preset now plays at about the same loudness.
+
 ## 0.11.0
 
 - **MORPH removed**: the MORPH tab (scenes A / B, fader, MORPH steps), the TO SCENE buttons of the presets window and the

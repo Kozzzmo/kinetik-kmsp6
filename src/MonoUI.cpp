@@ -85,7 +85,7 @@ public:
         fonts[fnBlack] = createFontFromMemory("kn-black", kFontBlack, sizeof(kFontBlack), false);
         fonts[fnLogo] = createFontFromMemory("kn-logo", kFontUnbounded, sizeof(kFontUnbounded), false);
         int sk, zm;
-        readDefaultView(sk, zm);
+        readDefaultView(sk, zm, lfoPal);
         setSkin(sk, false);
         if (zm != 100) setSize((uint)std::lround(W * baseScale() * zm / 100.0), (uint)std::lround(H * baseScale() * zm / 100.0));
         viewDirty = false;
@@ -119,22 +119,24 @@ public:
        #endif
        #endif
     }
-    static void readDefaultView(int& skinOut, int& zoomOut)
+    static void readDefaultView(int& skinOut, int& zoomOut, int* pal)
     {
         skinOut = kDefaultSkin; zoomOut = 100;
         const std::string f = viewFile();
         if (f.empty()) return;
         if (FILE* fp = fs::open(f, "r")) {
-            int a = 0, b = 100; const int n = std::fscanf(fp, "%d %d", &a, &b); std::fclose(fp);
+            int a = 0, b = 100, c[3] = {4, 5, 7};
+            const int n = std::fscanf(fp, "%d %d %d %d %d", &a, &b, &c[0], &c[1], &c[2]); std::fclose(fp);
             if (n >= 1 && a >= 0 && a < kNumThemes) skinOut = a;
             if (n >= 2 && b >= 60 && b <= 300) zoomOut = b;
+            for (int l = 0; l < 3; ++l) if (n >= 3 + l && c[l] >= 0 && c[l] < kLfoPal) pal[l] = c[l];   // LFO colours (0.16 / 0.12)
         }
     }
-    static void writeDefaultView(int s, int z)
+    static void writeDefaultView(int s, int z, const int* pal)
     {
         const std::string f = viewFile();
         if (f.empty()) return;
-        if (FILE* fp = fs::open(f, "w")) { std::fprintf(fp, "%d %d\n", s, z); std::fclose(fp); }
+        if (FILE* fp = fs::open(f, "w")) { std::fprintf(fp, "%d %d %d %d %d\n", s, z, pal[0], pal[1], pal[2]); std::fclose(fp); }
     }
     void setSkin(int i, bool save)
     {
@@ -668,8 +670,11 @@ protected:
         else { box(r, th->btnFill); frame(r, th->btnEdge, -1.f, 1.f); }
         label(r.cx(), r.cy() + 1, s, size, on ? th->selText : th->btnText, ALIGN_CENTER | ALIGN_MIDDLE, th->fontButton);
     }
-    void drawKnob(const R& r, float v01, const char* name, const std::string& val, bool locked, bool highlight, bool enabled)
+    void drawKnob(const R& r, float v01, const char* name, const std::string& val, bool locked, bool highlight, bool enabled,
+                  float mod01 = -1.f, Color modCol = Color())
     {
+        // mod01 >= 0: an LFO moves this knob; the arc / ticks follow the modulated value in the LFO's colour,
+        // the pointer stays on the set value
         const float cx = r.cx(), cy = r.y + 44.f, rad = 26.f;
         const float a0 = kPi * 0.75f, a1 = kPi * 2.25f;
         v01 = clampf(v01, 0.f, 1.f);
@@ -684,6 +689,9 @@ protected:
             return;
         }
         const float a = a0 + (a1 - a0) * v01;
+        const bool modOn = mod01 >= 0.f;
+        const float e01 = modOn ? clampf(mod01, 0.f, 1.f) : v01;   // where the arc ends
+        const Color ac = modOn ? modCol : hi;                     // arc colour
         switch (th->knob) {
         case ksTicks: {
             // ring of tick dots around a dark knob (lit up to the value)
@@ -691,13 +699,13 @@ protected:
             for (int i = 0; i < n; ++i) {
                 const float t = (float)i / (n - 1);
                 const float ang = a0 + (a1 - a0) * t;
-                const bool lit = t <= v01 + 1e-4f;
-                beginPath(); circle(cx + std::cos(ang) * (rad + 3), cy + std::sin(ang) * (rad + 3), lit ? 1.6f : 1.1f);
-                fillColor(lit ? hi : th->knobTrack); fill();
+                const bool lit = t <= e01 + 1e-4f;
+                beginPath(); circle(cx + std::cos(ang) * (rad + 3), cy + std::sin(ang) * (rad + 3), lit ? (modOn ? 1.9f : 1.6f) : 1.1f);
+                fillColor(lit ? ac : th->knobTrack); fill();
             }
             if (th->glow) {
                 beginPath(); circle(cx, cy, rad - 3);
-                fillPaint(radialGradient(cx, cy, rad - 8, rad + 8, Color(hi, Color(0, 0, 0, 0.f), 0.75f), Color(0, 0, 0, 0.f))); fill();
+                fillPaint(radialGradient(cx, cy, rad - 8, rad + 8, Color(ac, Color(0, 0, 0, 0.f), 0.75f), Color(0, 0, 0, 0.f))); fill();
             }
             beginPath(); circle(cx, cy, rad - 5); fillColor(th->knobBody); fill();
             strokeColor(locked ? th->lock : th->knobRing); strokeWidth(locked ? 2.f : 1.2f); stroke();
@@ -707,7 +715,7 @@ protected:
         }
         case ksArcThick: {
             beginPath(); arc(cx, cy, rad, a0, a1, CW); strokeColor(th->knobTrack); strokeWidth(6.f); lineCap(BUTT); stroke();
-            beginPath(); arc(cx, cy, rad, a0, a0 + (a1 - a0) * std::max(0.001f, v01), CW); strokeColor(hi); strokeWidth(6.f); stroke();
+            beginPath(); arc(cx, cy, rad, a0, a0 + (a1 - a0) * std::max(0.001f, e01), CW); strokeColor(ac); strokeWidth(6.f); stroke();
             beginPath(); circle(cx, cy, rad - 6); fillColor(locked ? th->lock : th->knobBody); fill();
             strokeColor(th->knobRing); strokeWidth(1.2f); stroke();
             beginPath(); moveTo(cx + std::cos(a) * 6, cy + std::sin(a) * 6); lineTo(cx + std::cos(a) * (rad - 9), cy + std::sin(a) * (rad - 9));
@@ -717,7 +725,8 @@ protected:
         default: {
             beginPath(); circle(cx, cy, rad + 4); fillColor(th->inner); fill();
             beginPath(); arc(cx, cy, rad, a0, a1, CW); strokeColor(th->knobTrack); strokeWidth(5.f); stroke();
-            beginPath(); arc(cx, cy, rad, a0, a0 + (a1 - a0) * std::max(0.001f, v01), CW); strokeColor(hi); strokeWidth(5.f); stroke();
+            beginPath(); arc(cx, cy, rad, a0, a0 + (a1 - a0) * std::max(0.001f, e01), CW); strokeColor(ac); strokeWidth(5.f); stroke();
+            if (modOn && locked) { beginPath(); circle(cx, cy, rad + 4); strokeColor(th->lock); strokeWidth(1.5f); stroke(); }
             beginPath(); circle(cx, cy, rad - 7); fillColor(highlight ? Color(th->knobBody, Color(255, 255, 255), 0.1f) : th->knobBody); fill();
             beginPath(); moveTo(cx + std::cos(a) * (rad - 18), cy + std::sin(a) * (rad - 18));
             lineTo(cx + std::cos(a) * (rad - 8), cy + std::sin(a) * (rad - 8));
@@ -1337,7 +1346,7 @@ protected:
         }
         beginPath(); rect(w.x, w.cy(), w.w, 1.f); fillColor(withAlpha(th->lcdDim, 0.5f)); fill();
         bool lk = false; for (int k = 0; k < 8; ++k) lk = lk || shownLocked(lfoParam(l, k));
-        lcdCurve(X, Y, n, dep < 0.004f ? withAlpha(th->lcdDim, 0.7f) : (lk ? th->lock : th->lcdText), 2.f);
+        lcdCurve(X, Y, n, dep < 0.004f ? withAlpha(th->lcdDim, 0.7f) : (lk ? th->lock : lfoInk(l)), 2.f);
         const int type = lfoTypeIndex((int)shownValue(lfoParam(l, 3)));
         if (type == 1) { // RETRIG: the cycle restarts on every note
             for (int c = 0; c < 2; ++c) { beginPath(); rect(w.x + w.w * c / 2.f, w.y, 1.5f, w.h); fillColor(withAlpha(th->accent, 0.8f)); fill(); }
@@ -1362,6 +1371,7 @@ protected:
         if (dep < 0.004f) label(rx, g.y + g.h - 8, "DEPTH 0: no effect", 9.5f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
         else { std::snprintf(b, sizeof(b), "DEPTH %d%%   PHASE %d\xC2\xB0", (int)std::lround(dep * 100.f), (int)std::lround(phase * 360.f));
                label(rx, g.y + g.h - 8, b, 9.5f, th->lcdText, ALIGN_LEFT | ALIGN_MIDDLE, fnMono); }
+        drawLfoColor(l);
     }
 
     // ---- TRACK: pitch, scale on a keyboard, output and MIDI
@@ -1583,10 +1593,11 @@ protected:
             float v = locked ? p.locks[selTrack][lockStep][pi] : tp(selTrack, pi);
             const bool recNow = recording() && drag == dkTrackKnob && dragIndex == k && recDirty;
             if (recNow) v = recVal;
-            drawKnob(knob(k), v / 127.f, trackParamName(m, pi), valueText(selTrack, pi, v), locked || recNow,
-                     drag == dkTrackKnob && dragIndex == k, true);
             LfoHit hits[8]; const int nh = lfoHits(selTrack, pi, hits);
-            if (nh > 0) drawLfoRing(knob(k), hits, nh);
+            drawKnob(knob(k), v / 127.f, trackParamName(m, pi), valueText(selTrack, pi, v), locked || recNow,
+                     drag == dkTrackKnob && dragIndex == k, true, nh > 0 ? lfoLive(v, hits, nh) / 127.f : -1.f,
+                     nh > 0 ? lfoInk(hits[0].l) : Color());
+            if (nh > 0) drawLfoBadge(knob(k), hits, nh);
         }
     }
 
@@ -2360,7 +2371,7 @@ protected:
     {
         char b[32]; std::snprintf(b, sizeof(b), "%d %d", skin, zoomPercent());
         setState("skin", b);      // saved with the project
-        writeDefaultView(skin, zoomPercent()); // and used by new instances
+        writeDefaultView(skin, zoomPercent(), lfoPal); // and used by new instances
         viewDirty = false;
     }
     void onResize(const ResizeEvent& ev) override
@@ -3031,6 +3042,7 @@ protected:
         if (overlay == ovPresets) { presetClick(x, y, dbl); return true; }
         if (overlay == ovFx) { fxMenuClick(x, y); return true; }
         if (overlay == ovDest) return destClick(x, y);
+        if (overlay == ovNone && page >= pgLfo1 && page <= pgLfo3 && lfoColorClick(page - pgLfo1, x, y)) return true;
         if (overlay == ovNone && page >= pgLfo1 && page <= pgLfo3 && lfoDestBox().in(x, y)) { openDestMenu(page - pgLfo1); return true; }
         if (overlay == ovHelp) { overlay = ovNone; repaint(); return true; }
         if (overlay == ovLicense) return licenseClick(x, y);
@@ -3778,24 +3790,68 @@ private:
         default: { const uint32_t x = (uint32_t)(std::floor(nowSec() * lfoFreeHz(v[b])) * 2654435761.0); return (float)((x >> 8) & 0xFFFF) / 32767.5f - 1.f; }
         }
     }
-    Color lfoInk() const { return th->logo == lgRiso ? th->lock : Color(64, 206, 255); }
+    // LFO colours: chosen per LFO on its page (COLOR), saved per user with the view (not in the project)
+    static constexpr int kLfoPal = 8;
+    static Color lfoPalColor(int i)
+    {
+        static const uint8_t c[kLfoPal][3] = {{64, 206, 255}, {255, 150, 50}, {176, 136, 255}, {242, 46, 58},
+                                              {125, 255, 90}, {255, 214, 64}, {80, 124, 255}, {236, 238, 248}};
+        i = clampi(i, 0, kLfoPal - 1);
+        return Color(c[i][0], c[i][1], c[i][2]);
+    }
+    int lfoPal[3] = {4, 5, 7};    // palette index per LFO (defaults: green, yellow, white)
+    int lfoPick = -1;             // LFO whose colour row is open on its page
+    Color lfoInk(int l) const
+    {
+        const int i = lfoPal[clampi(l, 0, 2)];
+        if (i == kLfoPal - 1 && th->logo == lgRiso) return th->text;   // WHITE on paper = ink
+        return lfoPalColor(i);
+    }
+    // the knob value the LFOs give right now (UI estimate, same scaling as the engine: value + out * depth / 2)
+    float lfoLive(float base, const LfoHit* h, int n) const
+    {
+        float v = base;
+        for (int i = 0; i < n; ++i) v += lfoUiValue(h[i].s, h[i].l) * values[tpIndex(h[i].s, kLfoBase[h[i].l] + 1)] * 0.5f;
+        return clampf(v, 0.f, 127.f);
+    }
     bool ringsShown = false; double lastRingPaint = 0.0;
-    void drawLfoRing(const R& r, const LfoHit* h, int n)
+    void drawLfoBadge(const R& r, const LfoHit* h, int n)
     {
         ringsShown = true;
-        const float cx = r.cx(), cy = r.y + 44.f, rad = 35.f;
-        const Color c = lfoInk();
-        beginPath(); circle(cx, cy, rad); strokeColor(Color(c.red, c.green, c.blue, 0.28f)); strokeWidth(2.f); stroke();
-        const float a0 = kPi * 0.75f, a1 = kPi * 2.25f;
-        for (int i = 0; i < n && i < 3; ++i) {
-            const float v = lfoUiValue(h[i].s, h[i].l);
-            const float a = a0 + (a1 - a0) * (0.5f + 0.5f * v);
-            beginPath(); arc(cx, cy, rad, a - 0.28f, a + 0.28f, CW); strokeColor(c); strokeWidth(3.5f); lineCap(ROUND); stroke();
-        }
         char b[24];
         if (h[0].s == selTrack) std::snprintf(b, sizeof(b), n > 1 ? "L%d+" : "L%d", h[0].l + 1);
         else std::snprintf(b, sizeof(b), n > 1 ? "T%d L%d+" : "T%d L%d", h[0].s + 1, h[0].l + 1);
-        label(r.x + r.w - 6, r.y + 8, b, 8.5f, c, ALIGN_RIGHT | ALIGN_MIDDLE);
+        label(r.x + r.w - 6, r.y + 8, b, 8.5f, lfoInk(h[0].l), ALIGN_RIGHT | ALIGN_MIDDLE);
+    }
+    // COLOR chip on the LFO page (bottom right of the screen) and the row of swatches it opens
+    R lfoColChip() const { return {620.f, 274.f, 64.f, 16.f}; }
+    R lfoSwatch(int i) const { return {448.f + i * 29.5f, 230.f, 24.f, 24.f}; }
+    void drawLfoColor(int l)
+    {
+        const R c = lfoColChip();
+        label(c.x + 2, c.cy(), "COLOR", 9.f, th->lcdDim, ALIGN_LEFT | ALIGN_MIDDLE, fnMono);
+        beginPath(); roundedRect(c.x + c.w - 22, c.y + 1, 22, c.h - 2, 3.f); fillColor(lfoInk(l)); fill();
+        if (lfoPick != l) return;
+        const R bg{lfoSwatch(0).x - 6, lfoSwatch(0).y - 6, kLfoPal * 29.5f + 6.5f, 36.f};
+        box(bg, th->lcdBg, 4.f); frame(bg, withAlpha(th->lcdText, 0.6f), 4.f);
+        for (int i = 0; i < kLfoPal; ++i) {
+            const R s = lfoSwatch(i);
+            beginPath(); circle(s.cx(), s.cy(), 9.f);
+            fillColor(i == kLfoPal - 1 && th->logo == lgRiso ? th->text : lfoPalColor(i)); fill();
+            if (lfoPal[l] == i) { beginPath(); circle(s.cx(), s.cy(), 11.5f); strokeColor(th->lcdText); strokeWidth(2.f); stroke(); }
+        }
+    }
+    // true when the click was used
+    bool lfoColorClick(int l, float x, float y)
+    {
+        if (lfoPick == l) {
+            for (int i = 0; i < kLfoPal; ++i)
+                if (lfoSwatch(i).in(x, y)) { lfoPal[l] = i; lfoPick = -1; saveView(); repaint(); return true; }
+            lfoPick = -1; repaint();
+            return lfoColChip().in(x, y) || R{442.f, 224.f, 248.f, 36.f}.in(x, y);
+        }
+        if (lfoColChip().in(x, y)) { lfoPick = l; repaint(); return true; }
+        return false;
     }
     bool euclidSlot(int k) const { return page == pgArp && (k == 6 || k == 7); }
     void applyEuclid(int t)
