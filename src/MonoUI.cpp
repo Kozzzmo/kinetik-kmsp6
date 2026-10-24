@@ -506,7 +506,11 @@ protected:
     // presets window
     R presetBox() const { return {80.f, 80.f, 1020.f, 640.f}; }
     R presetTab(int i) const { return {300.f + i * 134.f, 96.f, 128.f, 32.f}; }
-    R presetRow(int i) const { return {100.f + (i % 2) * 490.f, 140.f + (i / 2) * 43.f, 480.f, 40.f}; }
+    R presetRow(int i) const { return {100.f + (i % 2) * 490.f, 174.f + (i / 2) * 43.f, 480.f, 40.f}; }
+    static constexpr int kPresetRows = 10;   // 2 columns
+    // style chips above the list: 0 = ALL, 1.. = kPresetCats
+    R presetCatChip(int i) const { const float w = (980.f - kPresetCatCount * 4.f) / (kPresetCatCount + 1); return {100.f + i * (w + 4.f), 140.f, w, 28.f}; }
+    int presetCat = -1;
     R presetSaveNew() const { return {100.f, 668.f, 150.f, 36.f}; }
     R presetDelete() const { return {256.f, 668.f, 80.f, 36.f}; }
     R presetLoadAll() const { return {574.f, 668.f, 130.f, 36.f}; }
@@ -1947,14 +1951,16 @@ protected:
             return q.empty() || lowerStr(a).find(q) != std::string::npos || (d && lowerStr(d).find(q) != std::string::npos); };
         if (presetPage != 1)
             for (int i = 0; i < kNumPresets; ++i)
-                if ((presetPage == 0 || isFav(false, kPresets[i].name)) && match(kPresets[i].name, kPresets[i].desc))
+                if ((presetPage == 0 || isFav(false, kPresets[i].name)) && (presetCat < 0 || kPresets[i].cat == presetCat)
+                    && (match(kPresets[i].name, kPresets[i].desc) || match(kPresetCats[kPresets[i].cat], nullptr)))
                     presetView.push_back({false, i, kPresets[i].name});
-        if (presetPage != 0)
+        std::stable_sort(presetView.begin(), presetView.end(), [](const PEntry& x, const PEntry& y) { return kPresets[x.idx].cat < kPresets[y.idx].cat; });   // grouped by style
+        if (presetPage != 0 && presetCat < 0)   // user presets have no style: shown with ALL
             for (int i = 0; i < (int)userPresets.size(); ++i)
                 if ((presetPage == 1 || isFav(true, userPresets[i])) && match(userPresets[i], nullptr))
                     presetView.push_back({true, i, userPresets[i]});
         if (presetSel >= (int)presetView.size()) presetSel = -1;
-        presetScroll = clampi(presetScroll, 0, std::max(0, ((int)presetView.size() + 1) / 2 - 11));
+        presetScroll = clampi(presetScroll, 0, std::max(0, ((int)presetView.size() + 1) / 2 - kPresetRows));
     }
 
     void drawPresets()
@@ -1968,6 +1974,8 @@ protected:
         button(presetTab(1), b, presetPage == 1, 11.f);
         std::snprintf(b, sizeof(b), "FAVOURITES (%d)", favCount());
         button(presetTab(2), b, presetPage == 2, 11.f);
+        for (int c = -1; c < kPresetCatCount; ++c)
+            button(presetCatChip(c + 1), c < 0 ? "ALL" : kPresetCats[c], presetCat == c, 9.5f);
         const R sr = presetSearchBox();
         box(sr, th->lcdBg); frame(sr, presetSearch.empty() ? th->btnEdge : th->lcdText, -1.f, 1.f);
         if (presetSearch.empty()) label(sr.x + 12, sr.cy() + 1, "TYPE TO SEARCH", 10.f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
@@ -1977,7 +1985,7 @@ protected:
             label(sr.x + sr.w - 12, sr.cy() + 1, "ESC = CLEAR", 9.f, th->dim, ALIGN_RIGHT | ALIGN_MIDDLE);
         }
         const int n = presetCount();
-        for (int k = 0; k < 22; ++k) {
+        for (int k = 0; k < kPresetRows * 2; ++k) {
             const int i = k + presetScroll * 2;
             if (i >= n) break;
             const PEntry& e = presetView[i];
@@ -1989,7 +1997,17 @@ protected:
                 number(r.x + 14, r.cy() + 1, e.name.c_str(), 15.f, fg, ALIGN_LEFT | ALIGN_MIDDLE);
             } else {
                 number(r.x + 12, r.y + 13, e.name.c_str(), 14.f, fg, ALIGN_LEFT | ALIGN_MIDDLE);
-                label(r.x + 12, r.y + 29, e.user ? "user preset" : kPresets[e.idx].desc, 9.f, fd, ALIGN_LEFT | ALIGN_MIDDLE);
+                if (e.user) label(r.x + 12, r.y + 29, "user preset", 9.f, fd, ALIGN_LEFT | ALIGN_MIDDLE);
+                else {
+                    std::string d = std::string(kPresetCats[kPresets[e.idx].cat]) + "  -  " + kPresets[e.idx].desc;
+                    const int f = th->fontLabel;   // fit the line inside the row (before the star)
+                    useFont(f); fontSize(textSize(9.f, f)); textLetterSpacing(f == fnMono ? th->labelSpacing * (9.f / 12.f) : 0.f);
+                    DGL_NAMESPACE::Rectangle<float> bb; bool cut = false;
+                    while (d.size() > 8) { textBounds(0, 0, d.c_str(), nullptr, bb); if (bb.getWidth() <= r.w - 60.f) break; d.pop_back(); cut = true; }
+                    textLetterSpacing(0.f);
+                    if (cut) { while (!d.empty() && d.back() == ' ') d.pop_back(); d += "..."; }
+                    label(r.x + 12, r.y + 29, d.c_str(), 9.f, fd, ALIGN_LEFT | ALIGN_MIDDLE);
+                }
             }
             const bool fav = isFav(e.user, e.name);
             label(r.x + r.w - 20, r.cy() + 1, fav ? "\xE2\x98\x85" : "\xE2\x98\x86", 16.f, fav && !sel ? th->accent : fd,
@@ -2005,7 +2023,7 @@ protected:
                 label(bx.cx(), 370, "Click the star of a preset to add it here.", 11.f, th->dim);
             }
         }
-        if (n > 22) std::snprintf(b, sizeof(b), "double-click = load everything   scroll for more (%d-%d of %d)", presetScroll * 2 + 1, std::min(n, presetScroll * 2 + 22), n);
+        if (n > kPresetRows * 2) std::snprintf(b, sizeof(b), "double-click = load everything   scroll for more (%d-%d of %d)", presetScroll * 2 + 1, std::min(n, presetScroll * 2 + kPresetRows * 2), n);
         else std::snprintf(b, sizeof(b), "double-click = load everything");
         label(1080, 640, b, 9.5f, th->dim, ALIGN_RIGHT | ALIGN_MIDDLE);
         label(100, 640, presetMsg.c_str(), 10.f, th->lock, ALIGN_LEFT | ALIGN_MIDDLE);
@@ -2034,11 +2052,13 @@ protected:
                 if (t != 0) refreshUserPresets();
                 rebuildPresetView(); repaint(); return;
             }
+        for (int c = -1; c < kPresetCatCount; ++c)
+            if (presetCatChip(c + 1).in(x, y)) { presetCat = presetCat == c ? -1 : c; presetSel = -1; presetScroll = 0; rebuildPresetView(); repaint(); return; }
         if (presetSearchBox().in(x, y)) {   // a click clears the search
             presetSearch.clear(); presetSel = -1; rebuildPresetView(); repaint(); return;
         }
         const int n = presetCount();
-        for (int k = 0; k < 22; ++k) {
+        for (int k = 0; k < kPresetRows * 2; ++k) {
             const int i = k + presetScroll * 2;
             const R r = presetRow(k);
             if (i < n && r.in(x, y)) {
@@ -3379,7 +3399,7 @@ protected:
         const float d = ev.delta.getY() > 0 ? 1.f : (ev.delta.getY() < 0 ? -1.f : 0.f);
         if (overlay == ovPresets && d != 0.f) {
             const int rows = (presetCount() + 1) / 2;
-            presetScroll = clampi(presetScroll - (int)d, 0, std::max(0, rows - 11));
+            presetScroll = clampi(presetScroll - (int)d, 0, std::max(0, rows - kPresetRows));
             repaint(); return true;
         }
         if (d == 0.f || overlay != ovNone) return false;

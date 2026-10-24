@@ -564,8 +564,8 @@ static void presetEnsembleStrings(PB& b)
 }
 static void presetChaosArp(PB& b)
 {
-    b.kit(0, mFM, {32, 60, 64, 20, 10, 0, 40, 30}); b.amp(0, 0, 0, 30, 0, 30); b.arp(0, 3, 1, 1, 4); b.fx(0, tpDEL, 40);
-    b.kit(1, mSAW, {0, 0, 64, 0, 64, 64, 40, 0}); b.amp(1, 0, 0, 40, 50, 20); b.flt2(1, 45, 40, 0, 0, 0, 40, 95);
+    b.kit(0, mFM, {32, 60, 64, 20, 10, 0, 40, 30}); b.amp(0, 0, 0, 50, 40, 30); b.arp(0, 3, 1, 1, 4); b.fx(0, tpDEL, 40); b.fx(0, tpVOL, 122);
+    b.kit(1, mSAW, {0, 0, 64, 0, 64, 64, 40, 0}); b.amp(1, 0, 0, 40, 60, 20); b.flt2(1, 55, 40, 0, 0, 0, 40, 95); b.fx(1, tpVOL, 120);
     b.kit(2, mNOISE, {110, 40, 0, 0, 0, 0, 0, 0}); b.amp(2, 0, 0, 20, 0, 15); b.fx(2, tpVOL, 60);
     for (int t = 0; t < kTracks; ++t) b.g(chaSendG(t), 0);
     b.g(chaSendG(0), 127); b.g(chaSendG(2), 100);
@@ -618,43 +618,210 @@ static void presetGlitchBass(PB& b)
     b.g(gTEMPO, 140);
 }
 
-struct PresetDef { const char* name; const char* desc; void (*build)(PB&); bool expReso = false; };   // expReso: voiced with the 0.6 curve
+
+// ---- 0.12: new presets (8 tracks, wavetables, echo models and extras; voiced with the exponential RESONANCE)
+static int shapeV(int i) { return i * 8 + 4; }   // CHORD machine: value of chord shape i (kChordShapeDefs)
+static void presetFullBand(PB& b)
+{
+    // eight tracks: bass, chords, pad, lead, arp, bells, choir, pluck
+    b.kit(0, mSAW, {0, 30, 70, 50, 32, 64, 70, 0}); b.amp(0, 0, 0, 50, 60, 25); b.flt2(0, 45, 40, 0, 0, 0, 45, 90); b.fx(0, tpVOL, 95); b.fx(0, tpPORT, 20);
+    b.kit(1, mCHORD, {20, shapeV(5), 40, 0, 20, 30, 10, 80}); b.amp(1, 0, 0, 45, 0, 40); b.flt2(1, 75, 25, 0, 20, 0, 45, 70);
+    b.fx(1, tpDEL, 50); b.fx(1, tpPAN, 44); b.fx(1, tpVOL, 80);
+    b.kit(2, mSUPER, {50, 100, 127, 0, 0, 64, 0, 10}); b.amp(2, 80, 0, 90, 110, 100); b.flt2(2, 70, 10, 0, 20, 0, 50, 64); b.fx(2, tpREV, 90); b.fx(2, tpVOL, 64);
+    b.kit(3, mWAVE, {30, 30, 40, 64, 70, 30, 10, 0}); b.b.kit[3][kfTable] = 4;   // SYNC table lead
+    b.amp(3, 5, 0, 60, 80, 50); b.flt2(3, 90, 20, 0, 20, 0, 50, 64); b.fx(3, tpPORT, 25); b.legato(3); b.fx(3, tpDEL, 45); b.fx(3, tpVOL, 82);
+    b.lfo(3, 1, 72, 10, 1, 0, PITCH);
+    b.kit(4, mPLUCK, {65, 100, 40, 40, 0, 40, 30, 0}); b.amp(4, 0, 0, 70, 100, 50); b.arp(4, 1, 2, 0, 3); b.fx(4, tpDEL, 60); b.fx(4, tpPAN, 26); b.fx(4, tpVOL, 70);
+    b.kit(5, mFM, {48, 50, 112, 30, 0, 3, 60, 0}); b.amp(5, 0, 0, 70, 0, 80); b.fx(5, tpREV, 70); b.fx(5, tpPAN, 100); b.fx(5, tpVOL, 72);
+    b.kit(6, mVOX, {30, 50, 30, 60, 20, 50, 30, 30}); b.amp(6, 70, 0, 90, 100, 90); b.fx(6, tpREV, 80); b.fx(6, tpVOL, 62);
+    b.kit(7, mPLUCK, {75, 90, 40, 40, 0, 40, 30, 0}); b.amp(7, 0, 0, 90, 100, 60); b.fx(7, tpDEL, 50); b.fx(7, tpPAN, 84); b.fx(7, tpVOL, 70);
+    b.g(gECHO_TIME, fxDiv(d8D)); b.g(gECHO_FB, 50); b.g(gECHO_MODEL, echoModelValue(emPingPong)); b.g(gREV_SIZE, 90);
+    b.seq(0, 0, "A1 . A2 A1 | . A1 . G1 | F1 . F2 F1 | . F1 . E1 | C2 . C3 C2 | . C2 . D2 | G1 . G2 G1 | . G1 ~A1 .");
+    b.seq(0, 1, ". . A3 . | . . . . | . . F3 . | . . . . | . . C4 . | . . . . | . . G3 . | . . . .");
+    b.seq(0, 2, "A2 - - - | - - - - | F2 - - - | - - - - | C3 - - - | - - - - | G2 - - - | - - - -");
+    b.seq(0, 3, ". . . . | . . . . | . . . . | . . . . | E4 - - G4 | - - A4 - | ~G4 - - E4 | - D4 - -");
+    b.seq(0, 4, "A3 - - - | - - - - | F3 - - - | - - - - | C4 - - - | - - - - | G3 - - - | - - - -");
+    b.seq(0, 5, ". . . . | . . . . | . . . . | . . . E5 | . . . . | . . . . | . . . . | . . . D5");
+    b.seq(0, 6, "E4 - - - | - - - - | C4 - - - | - - - - | E4 - - - | - - - - | D4 - - - | - - - -");
+    b.seq(0, 7, ". . . . | A4 . . . | . . . . | F4 . . . | . . . . | G4 . . . | . . . . | B4 . . .");
+    b.settings(0, 32, 52);
+    b.g(gTEMPO, 118);
+}
+static void presetVowelSequence(PB& b)
+{
+    b.kit(0, mWAVE, {0, 30, 127, 64, 70, 0, 10, 0}); b.b.kit[0][kfTable] = 2;   // VOCAL table, scanned by the WAVE LFO
+    b.amp(0, 0, 0, 55, 40, 30); b.flt2(0, 80, 40, 0, 10, 0, 40, 80); b.fx(0, tpDEL, 50); b.fx(0, tpVOL, 92);
+    b.kit(1, mWAVE, {60, 10, 50, 64, 64, 0, 0, 0}); b.b.kit[1][kfTable] = 2;
+    b.amp(1, 60, 0, 90, 110, 90); b.fx(1, tpREV, 80); b.fx(1, tpVOL, 66); b.fx(1, tpPAN, 80);
+    b.kit(2, mSAW, {0, 0, 64, 0, 64, 64, 80, 0}); b.amp(2, 0, 0, 30, 50, 20); b.flt2(2, 40, 30, 0, 0, 0, 35, 70); b.fx(2, tpVOL, 90);
+    b.g(gECHO_TIME, fxDiv(d16D)); b.g(gECHO_FB, 60); b.g(gECHO_MODEL, echoModelValue(emMulti)); b.g(gECHO_MOD, 70); b.g(gREV_SIZE, 80);
+    b.seq(0, 0, "C3 C3 Eb3 C3 | G3 C3 Bb2 C3 | C3 C3 Eb3 F3 | G3 Bb3 G3 F3");
+    b.seq(0, 1, "C4 - - - | - - - - | Bb3 - - - | - - - -");
+    b.seq(0, 2, "C2 . . C2 | . . C2 . | Bb1 . . Bb1 | . . F1 .");
+    b.settings(0, 16, 54);
+    b.g(gTEMPO, 112);
+}
+static void presetSyncLead(PB& b)
+{
+    b.kit(0, mWAVE, {40, 50, 90, 76, 72, 40, 10, 0}); b.b.kit[0][kfTable] = 4;   // SYNC table
+    b.amp(0, 5, 0, 70, 90, 50); b.flt2(0, 95, 25, 0, 20, 0, 50, 64); b.fx(0, tpPORT, 30); b.legato(0); b.fx(0, tpDEL, 50); b.fx(0, tpVOL, 84);
+    b.lfo(0, 1, 76, 12, 1, 0, PITCH);
+    b.kit(1, mSAW, {0, 0, 64, 0, 52, 64, 90, 0}); b.amp(1, 0, 0, 35, 50, 20); b.flt2(1, 50, 40, 0, 0, 0, 30, 90); b.fx(1, tpVOL, 92);
+    b.kit(2, mSUPER, {55, 100, 127, 0, 0, 64, 0, 10}); b.amp(2, 60, 0, 90, 110, 100); b.fx(2, tpREV, 90); b.fx(2, tpVOL, 62);
+    b.kit(3, mPULSE, {40, 50, 40, 0, 0, 10, 0, 0}); b.amp(3, 0, 0, 30, 0, 30); b.arp(3, 1, 1, 0, 2); b.fx(3, tpDEL, 50); b.fx(3, tpPAN, 30); b.fx(3, tpVOL, 70);
+    b.g(gECHO_TIME, fxDiv(d8D)); b.g(gECHO_FB, 55); b.g(gECHO_MODEL, echoModelValue(emPingPong)); b.g(gECHO_RTIME, 84); b.g(gREV_SIZE, 90);
+    b.seq(0, 0, "D4 - - F4 | - - A4 - | ~G4 - - F4 | - E4 - - | C4 - - D4 | - - E4 - | ~F4 - - - | E4 - D4 -");
+    b.seq(0, 1, "D2 D2 D3 D2 | D2 D2 D3 D2 | Bb1 Bb1 Bb2 Bb1 | Bb1 Bb1 Bb2 Bb1 | F1 F1 F2 F1 | F1 F1 F2 F1 | C2 C2 C3 C2 | C2 C2 C3 C2");
+    b.seq(0, 2, "D3 - - - | - - - - | Bb2 - - - | - - - - | F2 - - - | - - - - | C3 - - - | - - - -");
+    b.seq(0, 3, "D4 - - - | - - - - | Bb3 - - - | - - - - | F3 - - - | - - - - | C4 - - - | - - - -");
+    b.settings(0, 32, 50);
+    b.g(gTEMPO, 104);
+}
+static void presetFoldBass(PB& b)
+{
+    b.kit(0, mWAVE, {20, 20, 60, 64, 64, 0, 80, 0}); b.b.kit[0][kfTable] = 5;   // FOLD table, folding scanned by the LFO
+    b.amp(0, 0, 0, 40, 40, 20); b.flt2(0, 60, 50, 0, 10, 0, 35, 90); b.fx(0, tpDIST, 30); b.fx(0, tpVOL, 92);
+    b.lfo(0, 0, 40, 60, 1, 0, 0);
+    b.kit(1, mCHORD, {30, shapeV(5), 30, 0, 0, 20, 0, 70}); b.amp(1, 0, 0, 30, 0, 30); b.flt2(1, 70, 30, 0, 30, 0, 35, 70);
+    b.fx(1, tpDEL, 75); b.fx(1, tpPAN, 40); b.fx(1, tpVOL, 76);
+    b.kit(2, mNOISE, {90, 30, 0, 0, 0, 0, 30, 0}); b.amp(2, 0, 0, 15, 0, 10); b.fx(2, tpVOL, 85); b.fx(2, tpPAN, 84);
+    b.g(gECHO_TIME, fxDiv(d8D)); b.g(gECHO_FB, 65); b.g(gECHO_MODEL, echoModelValue(emDiffuse)); b.g(gECHO_MOD, 70); b.g(gECHO_DUCK, 50);
+    b.g(gREV_SIZE, 70); b.g(gDRIVE, 15);
+    b.seq(0, 0, "F1 . F1 F2 | . F1 . F1 | Ab1 . F1 . | Eb1 . F1 .");
+    b.seq(0, 1, ". . . . | . . F3 . | . . . . | . . . Ab3");
+    b.seq(0, 2, ". . x . | . . x . | . . x . | . . x x");
+    b.settings(0, 16, 52);
+    b.g(gTEMPO, 128);
+}
+static void presetOrganGroove(PB& b)
+{
+    b.kit(0, mCHORD, {60, shapeV(6), 30, 0, 0, 10, 0, 90}); b.b.kit[0][kfTable] = 3;   // ORGAN table, 7th chords
+    b.amp(0, 0, 0, 60, 70, 30); b.flt2(0, 100, 10, 0, 20, 0, 50, 64); b.fx(0, tpVOL, 76); b.fx(0, tpPAN, 50);
+    b.lfo(0, 0, 70, 20, 1, 0, tpVOL);
+    b.kit(1, mSAW, {0, 0, 64, 0, 64, 64, 60, 0}); b.amp(1, 0, 0, 40, 60, 20); b.flt2(1, 45, 30, 0, 0, 0, 40, 70); b.fx(1, tpVOL, 92);
+    b.kit(2, mPLUCK, {70, 95, 40, 40, 0, 40, 30, 0}); b.amp(2, 0, 0, 70, 100, 50); b.fx(2, tpDEL, 40); b.fx(2, tpPAN, 84); b.fx(2, tpVOL, 72);
+    b.kit(3, mNOISE, {100, 20, 0, 0, 0, 0, 40, 0}); b.amp(3, 0, 0, 10, 0, 8); b.fx(3, tpVOL, 56); b.fx(3, tpPAN, 30);
+    b.g(choSendG(0), 70); b.g(gCHO_MODEL, chorusModelValue(cmChorus)); b.g(gCHO_LEV, 60);
+    b.g(gECHO_TIME, fxDiv(d8)); b.g(gECHO_FB, 35); b.g(gECHO_MODEL, echoModelValue(emTape)); b.g(gREV_SIZE, 50);
+    b.seq(0, 0, ". . G3 . | . . G3 . | . . F3 . | . . F3 .");
+    b.seq(0, 1, "G1 . . G2 | . G1 Bb1 . | F1 . . F2 | . F1 A1 .");
+    b.seq(0, 2, ". . . . | D4 . . . | . . . . | C4 . . .");
+    b.seq(0, 3, "x . x . | x . x . | x . x . | x . x x");
+    b.settings(0, 16, 60);
+    b.g(gTEMPO, 110);
+}
+static void presetDigitalArp(PB& b)
+{
+    b.kit(0, mWAVE, {40, 50, 60, 76, 70, 30, 0, 20}); b.b.kit[0][kfTable] = 6;   // DIGITAL table
+    b.amp(0, 0, 0, 70, 60, 40); b.arp(0, 3, 2, 0, 5); b.fx(0, tpDEL, 60); b.fx(0, tpPAN, 44); b.fx(0, tpVOL, 122);
+    b.kit(1, mWAVE, {80, 20, 40, 64, 64, 0, 0, 0}); b.b.kit[1][kfTable] = 6;
+    b.amp(1, 0, 0, 60, 30, 30); b.fx(1, tpPAN, 90); b.fx(1, tpVOL, 112); b.speed(1, 3);   // the same line at 3/2x
+    b.kit(2, mFM, {32, 60, 64, 20, 30, 0, 40, 30}); b.amp(2, 0, 0, 40, 50, 20); b.flt2(2, 55, 30, 0, 0, 0, 30, 80); b.fx(2, tpVOL, 115);
+    b.g(gECHO_TIME, fxDiv(d16D)); b.g(gECHO_FB, 65); b.g(gECHO_MODEL, echoModelValue(emMulti)); b.g(gECHO_MOD, 90); b.g(gREV_SIZE, 70);
+    b.seq(0, 0, "E3 - - - | - - - - | C3 - - - | - - - -");
+    b.seq(0, 1, "E5 . B4 . G4 . | E5 . A4 . F4 .");
+    b.seq(0, 2, "E1 . . E1 | . . E2 . | C1 . . C1 | . . C2 .");
+    b.settings(0, 16, 50);
+    b.g(gTEMPO, 126);
+}
+static void presetFmKeys(PB& b)
+{
+    b.kit(0, mCHORD, {40, shapeV(4), 50, 0, 30, 30, 20, 85}); b.b.kit[0][kfTable] = 7;   // FM table, maj7 chords
+    b.amp(0, 0, 0, 80, 40, 60); b.flt2(0, 95, 10, 0, 10, 0, 50, 64); b.fx(0, tpREV, 50); b.fx(0, tpVOL, 76);
+    b.kit(1, mFM, {32, 40, 64, 0, 0, 0, 50, 40}); b.amp(1, 0, 0, 50, 50, 30); b.fx(1, tpVOL, 90);
+    b.kit(2, mFM, {48, 50, 112, 30, 0, 3, 60, 0}); b.amp(2, 0, 0, 70, 0, 80); b.fx(2, tpDEL, 50); b.fx(2, tpPAN, 90); b.fx(2, tpVOL, 70);
+    b.g(choSendG(0), 90); b.g(choSendG(2), 60); b.g(gCHO_MODEL, chorusModelValue(cmEnsemble)); b.g(gCHO_LEV, 70);
+    b.g(gECHO_TIME, fxDiv(d8D)); b.g(gECHO_FB, 40); b.g(gREV_SIZE, 80);
+    b.seq(0, 0, "F3 - - - | - - - . | E3 - - - | - - - . | D3 - - - | - - - . | C3 - - - | - - - .");
+    b.seq(0, 1, "F1 . . F1 | . . C2 . | E1 . . E1 | . . B1 . | D1 . . D1 | . . A1 . | C1 . . C1 | . . G1 .");
+    b.seq(0, 2, ". . . . | . . . A4 | . . . . | . . . G4 | . . . . | . . . F4 | . . . . | . . . E4");
+    b.settings(0, 32, 56);
+    b.g(gTEMPO, 92);
+}
+static void presetReversePads(PB& b)
+{
+    b.kit(0, mCHORD, {10, shapeV(11), 60, 0, 40, 40, 30, 60}); b.b.kit[0][kfTable] = 1;   // BASIC table, maj9
+    b.amp(0, 90, 0, 100, 110, 110); b.flt2(0, 70, 10, 0, 20, 0, 50, 64); b.fx(0, tpDEL, 70); b.fx(0, tpREV, 90); b.fx(0, tpVOL, 72);
+    b.lfo(0, 0, 8, 40, 1, 0, tpCUTOFF);
+    b.kit(1, mFM, {64, 40, 80, 20, 0, 3, 60, 0}); b.amp(1, 0, 0, 80, 0, 90); b.fx(1, tpDEL, 90); b.fx(1, tpPAN, 30); b.fx(1, tpVOL, 70);
+    b.kit(2, mNOISE, {60, 40, 20, 0, 0, 0, 0, 0}); b.amp(2, 100, 0, 110, 110, 110); b.fx(2, tpREV, 90); b.fx(2, tpVOL, 50);
+    b.g(gECHO_TIME, fxDiv(d4)); b.g(gECHO_FB, 70); b.g(gECHO_MODEL, echoModelValue(emReverse)); b.g(gECHO_MOD, 30); b.g(gECHO_LEV, 80);
+    b.g(gREV_SIZE, 120); b.g(gREV_LEV, 80);
+    b.seq(0, 0, "D3 - - - | - - - - | - - - - | - - - - | Bb2 - - - | - - - - | - - - - | - - - -");
+    b.seq(0, 1, ". . . . | . . A4 . | . . . . | . . . . | . . . . | . . F4 . | . . . . | . . . .");
+    b.seq(0, 2, "x - - - | - - - - | - - - - | - - - - | - - - - | - - - - | - - - - | - - - -");
+    b.settings(0, 32, 50);
+    b.g(gTEMPO, 76);
+}
+
+// factory preset: expReso = voiced with the 0.6 RESONANCE curve; cat = style (kPresetCats); trimDb = level trim so every
+// preset plays at about the same loudness (-15 LUFS, measured with tests/audit.cpp --fit)
+struct PresetDef { const char* name; const char* desc; void (*build)(PB&); bool expReso = false; int cat = 0; float trimDb = 0.f; };
+enum PresetCat { pcBasics, pcAcid, pcTechno, pcDub, pcSynthwave, pcAmbient, pcRetro, pcExperimental, kPresetCatCount };
+static const char* const kPresetCats[kPresetCatCount] = {"BASICS", "ACID", "TECHNO", "DUB", "SYNTHWAVE", "AMBIENT", "RETRO", "EXPERIMENTAL"};
 
 static const PresetDef kPresets[] = {
-    {"Init", "base parameters, empty sequencer", presetInit},
-    {"Demo Song", "bass, stab, pad, bells, lead and pluck", presetDemo},
-    {"Acid Line", "resonant sliding bass, two patterns", presetAcid},
-    {"Detroit Chords", "minor 7th arp stabs and strings", presetDetroit},
-    {"Berlin School", "sequenced saws, slow pads", presetBerlin},
-    {"Synthwave Drive", "octave bass, supersaw, arp, lead", presetSynthwave},
-    {"Arp Cascade", "four arpeggiators interlocking", presetArpCascade},
-    {"Dub Stabs", "chord stabs drowned in echo", presetDubStabs},
-    {"IDM Bleeps", "FM blips, ratchets, conditions", presetIdm},
-    {"Ambient Drift", "slow pads, bells and wind", presetAmbient},
-    {"FM Bells", "FM bass, bells, e-piano, chimes", presetFmBells},
-    {"Wavetable Lead", "gliding wave lead over a wave bass", presetWaveLead},
-    {"Vox Choir", "formant voices in harmony", presetChoir},
-    {"Chiptune", "pulse waves, crushed and quick", presetChiptune},
-    {"Trance Supersaw", "offbeat bass, supersaw riff, pluck arp", presetTrance},
-    {"Plucked Minimal", "strings, clicks and space", presetMinimal},
-    {"Electro Funk", "sliding pulse bass, talking vox", presetElectroFunk},
-    {"Noise Scapes", "pitched noise, grains and textures", presetNoiseScapes},
-    {"Acid Drive", "a driven, resonant acid line with echo", presetAcidDrive, true},
-    {"Ensemble Strings", "chords through the ensemble chorus, hall, plucks", presetEnsembleStrings, true},
-    {"Chaos Arp", "FM arp repeated and pitched up by CHAOS, bass untouched", presetChaosArp, true},
-    {"Speed Phase", "the same pluck line at 1x and 3/2x drifting apart", presetSpeedPhase, true},
-    {"Choir Pad", "a slow LFO opens and closes a dark choir pad", presetChoirPad, true},
-    {"Glitch Bass", "CHAOS stutters and reverses the bass only", presetGlitchBass, true},
+    {"Init", "base parameters, empty sequencer", presetInit, false, pcBasics, 0.f},
+    {"Demo Song", "bass, stab, pad, bells, lead and pluck", presetDemo, false, pcBasics, -1.2f},
+    {"Acid Line", "resonant sliding bass, two patterns", presetAcid, false, pcAcid, -1.3f},
+    {"Detroit Chords", "minor 7th arp stabs and strings", presetDetroit, false, pcTechno, 5.0f},
+    {"Berlin School", "sequenced saws, slow pads", presetBerlin, false, pcAmbient, -2.0f},
+    {"Synthwave Drive", "octave bass, supersaw, arp, lead", presetSynthwave, false, pcSynthwave, -1.9f},
+    {"Arp Cascade", "four arpeggiators interlocking", presetArpCascade, false, pcTechno, 1.4f},
+    {"Dub Stabs", "chord stabs drowned in echo", presetDubStabs, false, pcDub, -0.3f},
+    {"IDM Bleeps", "FM blips, ratchets, conditions", presetIdm, false, pcExperimental, 10.0f},
+    {"Ambient Drift", "slow pads, bells and wind", presetAmbient, false, pcAmbient, -1.3f},
+    {"FM Bells", "FM bass, bells, e-piano, chimes", presetFmBells, false, pcRetro, 0.7f},
+    {"Wavetable Lead", "gliding wave lead over a wave bass", presetWaveLead, false, pcSynthwave, 0.0f},
+    {"Vox Choir", "formant voices in harmony", presetChoir, false, pcAmbient, -3.6f},
+    {"Chiptune", "pulse waves, crushed and quick", presetChiptune, false, pcRetro, 4.3f},
+    {"Trance Supersaw", "offbeat bass, supersaw riff, pluck arp", presetTrance, false, pcSynthwave, -2.1f},
+    {"Plucked Minimal", "strings, clicks and space", presetMinimal, false, pcTechno, 6.0f},
+    {"Electro Funk", "sliding pulse bass, talking vox", presetElectroFunk, false, pcRetro, 1.3f},
+    {"Noise Scapes", "pitched noise, grains and textures", presetNoiseScapes, false, pcExperimental, 1.9f},
+    {"Acid Drive", "a driven, resonant acid line with echo", presetAcidDrive, true, pcAcid, 0.0f},
+    {"Ensemble Strings", "chords through the ensemble chorus, hall, plucks", presetEnsembleStrings, true, pcAmbient, 0.0f},
+    {"Chaos Arp", "FM arp repeated and pitched up by CHAOS, bass untouched", presetChaosArp, true, pcExperimental, 4.4f},
+    {"Speed Phase", "the same pluck line at 1x and 3/2x drifting apart", presetSpeedPhase, true, pcExperimental, 7.1f},
+    {"Choir Pad", "a slow LFO opens and closes a dark choir pad", presetChoirPad, true, pcAmbient, 1.6f},
+    {"Glitch Bass", "CHAOS stutters and reverses the bass only", presetGlitchBass, true, pcDub, 0.8f},
+    {"Full Band", "all eight tracks: bass, chords, pad, sync lead, arp, bells, choir, pluck", presetFullBand, true, pcBasics, 2.8f},
+    {"Vowel Sequence", "a WAVE line scanning the VOCAL table, MULTI-TAP echo", presetVowelSequence, true, pcExperimental, 5.5f},
+    {"Sync Lead", "gliding SYNC-table lead, octave bass, PING-PONG echo", presetSyncLead, true, pcSynthwave, 0.5f},
+    {"Fold Bass", "wavefolded bass (FOLD table) and minor chords in a DIFFUSE echo", presetFoldBass, true, pcTechno, 1.1f},
+    {"Organ Groove", "ORGAN-table 7th chords with tremolo, walking bass, tape echo", presetOrganGroove, true, pcRetro, 10.0f},
+    {"Digital Arp", "DIGITAL-table arpeggio, the same line at 3/2x, MULTI-TAP echo", presetDigitalArp, true, pcExperimental, 4.8f},
+    {"FM Keys", "FM-table maj7 chords in ensemble chorus, FM bass and bells", presetFmKeys, true, pcRetro, 8.2f},
+    {"Reverse Pads", "slow maj9 pads and bells into a REVERSE echo, huge reverb", presetReversePads, true, pcAmbient, 0.4f},
 };
 static constexpr int kNumPresets = (int)(sizeof(kPresets) / sizeof(kPresets[0]));
+
+inline void convertResoV05(float* values, Bank& bank);
+// level trim in dB: master VOLUME first (gain = 1.2 (v / 127)^2), what it cannot give goes to the track levels
+inline void applyLevelTrim(float* values, float db)
+{
+    if (std::fabs(db) < 0.05f) return;
+    float& mv = values[kGlobalBase + gVOLUME];
+    const float gain = 1.2f * (mv / 127.f) * (mv / 127.f) * std::pow(10.f, db / 20.f);
+    float v = 127.f * std::sqrt(gain / 1.2f);
+    if (v <= 127.f) { mv = std::round(v); return; }
+    mv = 127.f;
+    const float extra = std::sqrt(gain / 1.2f);
+    for (int t = 0; t < kTracks; ++t) { float& tv = values[tpIndex(t, tpVOL)]; tv = std::round(std::min(127.f, tv * extra)); }
+}
 
 inline void buildPreset(int i, float* values, Bank& bank)
 {
     PB b(values, bank);
-    if (i >= 0 && i < kNumPresets) kPresets[i].build(b);
-    if (i >= 0 && i < kNumPresets && kPresets[i].expReso) return;
-    // the presets were voiced with the linear RESONANCE curve used before 0.11: convert their values (knobs and
-    // locks) to the exponential curve (resoQ) so they keep the same resonance
+    if (i < 0 || i >= kNumPresets) return;
+    kPresets[i].build(b);
+    if (!kPresets[i].expReso) convertResoV05(values, bank);
+    applyLevelTrim(values, kPresets[i].trimDb);
+}
+// the presets voiced with the linear RESONANCE curve used before 0.6: their values (knobs and locks) converted to the
+// exponential curve (resoQ) so they keep the same resonance
+inline void convertResoV05(float* values, Bank& bank)
+{
     auto conv = [](float v, float qMin, float span) {
         const float q = qMin + clampf(v, 0.f, 127.f) / 127.f * span;
         const float e = std::log(q / qMin) / std::log((qMin + span) / qMin);
