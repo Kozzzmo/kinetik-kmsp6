@@ -296,3 +296,8 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
   multi helpers (old `groupBegin/groupFollow/groupEnd` removed).
 - Beat marks (0.13.1): 1 px line under step numbers with `s % 4 == 0` (drawSequencer).
 - Pattern box (0.13.2): buttons 24 px high from y 424 (rows 28 apart), MIDI / COPY / PASTE / CLEAR at y 398, 22 px: everything inside the inner box {716, 394, 448, 88}.
+
+## Added in KMSP-6 0.14 — pattern CHAIN
+
+- Same as KDSP-16 0.19: `Chain.hpp` (shared), `Engine::chainPl` (start with skipFirst, `peek` for `patFor`, `next` in `fire`),
+  `Engine::currentPattern()`, CHAIN button + `ovChain` window, view follows the chain. Test: `tests/chain.cpp` (shared).

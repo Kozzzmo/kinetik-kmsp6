@@ -215,6 +215,7 @@ public:
             if (wasPlaying) for (auto& tr : tracks) if (tr.gateLeft > 0) tr.gateLeft = 1; // release sequencer notes on stop
             wasPlaying = false; usingInternal = false; outStep = -1;
             curPattern = clampi((int)global[gPATTERN], 0, kPatterns - 1);
+            chainPl.reset();
         }
 
         events.clear();
@@ -227,6 +228,7 @@ public:
             if (restarted) {
                 lastBoundaryK = (int64_t)std::ceil(b0 / sb - 1e-9) - 1;
                 playStartK = lastBoundaryK + 1;
+                { const int c = chainPl.start(bank.chain, true); if (c >= 0) curPattern = c; }   // CHAIN: starts at its first entry
                 for (auto& tr : tracks) { tr.decK = INT64_MIN; tr.pre = true; }
             }
             const Pattern& pat0 = bank.patterns[curPattern];
@@ -235,7 +237,8 @@ public:
             const int64_t kFirst = (int64_t)std::floor((b0 - swingOff - maxMicro) / sb) - 2;
             const int64_t kLast = (int64_t)std::floor((b1 + maxMicro) / sb) + 1;
             auto toFrame = [&](double tk) { return (uint32_t)std::min<double>(frames - 1, std::max(0.0, (tk - b0) / beatsPerFrame)); };
-            const int want = clampi((int)global[gPATTERN], 0, kPatterns - 1);
+            const int chainNext = chainPl.peek(bank.chain);
+            const int want = chainNext >= 0 ? chainNext : clampi((int)global[gPATTERN], 0, kPatterns - 1);
             const int master = pat0.length ? pat0.length : 16;
             const int64_t nextSwitch = ((lastBoundaryK + 1 + master - 1) / master) * master;
             auto patFor = [&](int64_t k) -> const Pattern& {
@@ -311,6 +314,7 @@ public:
     }
 
     double stepBeats() const { return 0.25 / kScaleMult[bank.patterns[curPattern].scale % 7]; }
+    int currentPattern() const { return curPattern; }
 
     // ---- LINK group and global scale
     int linkVoices() const
@@ -362,6 +366,7 @@ private:
     std::vector<Ev> events;
     std::vector<float> dummy;
     int curPattern = 0;
+    ChainPlayer chainPl;
     int64_t lastBoundaryK = -1, playStartK = 0;
     bool wasPlaying = false, prevPlayParam = false, usingInternal = false, blockPlaying = false;
     double internalBeat = 0, prevB1 = 0, curBpm = 120, blockB0 = 0, blockBpf = 0;
@@ -404,7 +409,8 @@ private:
             const Pattern& pat = bank.patterns[curPattern];
             const int master = pat.length ? pat.length : 16;
             if ((((e.k % master) + master) % master) == 0) {
-                const int want = clampi((int)global[gPATTERN], 0, kPatterns - 1);
+                const int c = chainPl.next(bank.chain);
+                const int want = c >= 0 ? c : clampi((int)global[gPATTERN], 0, kPatterns - 1);
                 if (want != curPattern) curPattern = want;
             }
             outStep = (int)((((e.k % 32768) + 32768) % 32768) * kFineSteps);

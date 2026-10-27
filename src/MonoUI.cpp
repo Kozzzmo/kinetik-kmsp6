@@ -53,7 +53,7 @@ enum Mode { mdTrig, mdAccent, mdSlide, mdNote, mdLen, mdRatch, mdCond, mdTime, m
 static const char* const kModeNames[kModes] = {"TRIG", "ACCENT", "SLIDE", "NOTE", "LEN", "RATCH", "COND", "TIME", "CHORD"};
 
 enum DragKind { dkNone, dkTrackKnob, dkMasterKnob, dkTempo, dkSwing, dkAccent, dkKit, dkEuclid, dkStepNote, dkStepLen, dkKey, dkLink, dkSend, dkGlHold };
-enum Overlay { ovNone, ovPicker, ovPresets, ovHelp, ovSkins, ovSave, ovLicense, ovDest , ovUpdate, ovFx};
+enum Overlay { ovNone, ovPicker, ovPresets, ovHelp, ovSkins, ovSave, ovLicense, ovDest , ovUpdate, ovFx, ovChain};
 enum DragExtra { dkResize = 100 };
 
 static const char* const kMachineShort[kMachines] = {
@@ -462,6 +462,7 @@ protected:
     R patPaste() const { return {1018.f, 398.f, 68.f, 22.f}; }
     R patClear() const { return {1090.f, 398.f, 68.f, 22.f}; }
     R patMidi() const { return {874.f, 398.f, 68.f, 22.f}; }
+    R chainBtn() const { return {808.f, 398.f, 62.f, 22.f}; }
     R modeBtn(int i) const { return {20.f + i * 49.f, 504.f, 47.f, 26.f}; }
     R stepPage(int i) const { return {464.f + i * 25.f, 504.f, 23.f, 26.f}; }   // 8 pages of 16 steps
     R lenMinus() const { return {666.f, 504.f, 22.f, 26.f}; }
@@ -801,6 +802,7 @@ protected:
         if (overlay == ovSave) drawSave();
         if (overlay == ovLicense) drawLicense();
         if (overlay == ovUpdate) drawUpdate();
+        if (overlay == ovChain) drawChain();
         if (overlay == ovDest) drawDestMenu();
         if (tipShown && overlay == ovNone) drawTip();
         drawGrip();
@@ -1690,6 +1692,7 @@ protected:
         if (!patMsg.empty()) label(728, 409, patMsg.c_str(), 10.5f, th->lock, ALIGN_LEFT | ALIGN_MIDDLE);
         else label(728, 409, "PATTERNS", 10.5f, th->logo == lgRiso ? th->text : th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
         button(patMidi(), "MIDI", false, 10.5f);
+        button(chainBtn(), "CHAIN", bank->chain.active(), 10.f);
         button(patCopy(), patClip >= 0 ? "COPIED" : "COPY", false, 10.5f);
         button(patPaste(), "PASTE", false, 10.5f);
         button(patClear(), "CLEAR", false, 10.5f);
@@ -2958,6 +2961,7 @@ protected:
         if (trkCopy().in(x, y)) return "Copy this track: its steps and its sound.";
         if (trkPaste().in(x, y)) return "Click: paste the copied steps. Right-click: paste the copied sound.";
         if (trkClear().in(x, y)) return "Remove every step of this track in this pattern.";
+        if (chainBtn().in(x, y)) return "CHAIN: play a list of patterns in a loop, each a number of times.";
         if (patMidi().in(x, y)) return "Export this pattern as a MIDI file (Documents / Kinetik / KMSP-6 MIDI): one MIDI track per track, channels 1-8, notes as written on the steps (the plug-in applies its transpose and scale when the file plays it back). Drag it from the folder onto a MIDI track.";
         if (lockClrAll().in(x, y)) return "Remove every parameter lock of this track in this pattern.";
         if (shiftL().in(x, y)) return "Move the steps of this track one step earlier.";
@@ -3049,6 +3053,7 @@ protected:
         if (overlay == ovHelp) { overlay = ovNone; repaint(); return true; }
         if (overlay == ovLicense) return licenseClick(x, y);
         if (overlay == ovUpdate) return updateClick(x, y);
+        if (overlay == ovChain) return chainClick(x, y, right);
         if (overlay == ovNone && logoArea().in(x, y)) { overlay = ovUpdate; repaint(); return true; }
         if (overlay == ovSave) {
             if (saveOk().in(x, y)) commitSave();
@@ -3221,6 +3226,7 @@ protected:
             char b[32]; std::snprintf(b, sizeof(b), "pc %d %d", editPattern(), patClip); sendCmd(b); repaint(); return true;
         }
         if (patMidi().in(x, y)) { exportMidi(); repaint(); return true; }
+        if (chainBtn().in(x, y)) { overlay = ovChain; repaint(); return true; }
         if (patClear().in(x, y)) { char b[32]; std::snprintf(b, sizeof(b), "cp %d", editPattern()); sendCmd(b); repaint(); return true; }
 
         for (int i = 0; i < kModes; ++i) if (modeBtn(i).in(x, y)) { mode = i; if (mode != mdNote) noteStep = -1; repaint(); return true; }
@@ -3636,8 +3642,65 @@ protected:
         return true;
     }
 
+    // ------------------------------------------------------------------ pattern CHAIN window (same in every Kinetik plug-in)
+    int chainPlayingPattern() const { return gp(gOUT_STEP) >= 0.f ? (int)std::lround(gp(gOUT_PATTERN)) : -1; }
+    R chainBox() const { return {240.f, 110.f, 700.f, 470.f}; }
+    R chainOnBtn() const { return {700.f, 132.f, 216.f, 36.f}; }
+    R chainAddBtn(int i) const { return {264.f + (i % 8) * 82.f, 214.f + (i / 8) * 40.f, 76.f, 34.f}; }
+    R chainChip(int i) const { return {264.f + (i % 8) * 82.f, 340.f + (i / 8) * 52.f, 76.f, 46.f}; }
+    R chainClearBtn() const { return {264.f, 524.f, 140.f, 36.f}; }
+    R chainCloseBtn() const { return {796.f, 524.f, 120.f, 36.f}; }
+    void sendChain(const Chain& c) { sendCmd(c.line()); repaint(); }
+    void drawChain()
+    {
+        const R bx = chainBox();
+        overlayBox(bx);
+        const Chain& c = bank->chain;
+        number(264, bx.y + 40, "Pattern chain", 22.f, th->text, ALIGN_LEFT | ALIGN_MIDDLE);
+        button(chainOnBtn(), c.on ? "CHAIN ON" : "CHAIN OFF", c.on != 0, 11.f);
+        label(264, 198, "ADD A PATTERN AT THE END", 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        char b[24];
+        for (int i = 0; i < kPatterns; ++i) {
+            std::snprintf(b, sizeof(b), "A%02d", i + 1);
+            const R r = chainAddBtn(i);
+            box(r, th->btnFill); frame(r, th->btnEdge);
+            number(r.cx(), r.cy() + 1, b, 13.f, th->text);
+        }
+        label(264, 322, "THE CHAIN (CLICK = MORE REPEATS, RIGHT-CLICK = REMOVE)", 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        if (c.n == 0) label(264, 362, "empty: add patterns above, then switch CHAIN ON", 10.f, th->faint, ALIGN_LEFT | ALIGN_MIDDLE);
+        const int playing = chainPlayingPattern();
+        for (int i = 0; i < c.n; ++i) {
+            const R r = chainChip(i);
+            const bool now = c.on && playing == c.pat[i];
+            if (now) box(r, th->selFill); else { box(r, th->btnFill); frame(r, th->btnEdge); }
+            std::snprintf(b, sizeof(b), "A%02d", c.pat[i] + 1);
+            number(r.cx(), r.y + 17, b, 13.f, now ? th->selText : th->text);
+            std::snprintf(b, sizeof(b), "x%d", c.rep[i]);
+            label(r.cx(), r.y + 35, b, 9.5f, now ? th->selText : th->dim);
+        }
+        button(chainClearBtn(), "CLEAR", false, 10.5f);
+        button(chainCloseBtn(), "CLOSE", true, 11.f);
+    }
+    bool chainClick(float x, float y, bool right)
+    {
+        Chain c = bank->chain;
+        if (chainOnBtn().in(x, y)) { c.on = c.on ? 0 : (c.n > 0 ? 1 : 0); sendChain(c); return true; }
+        for (int i = 0; i < kPatterns; ++i) if (chainAddBtn(i).in(x, y)) { if (c.n < Chain::kMax) { c.add(i, 1); sendChain(c); } return true; }
+        for (int i = 0; i < c.n; ++i) if (chainChip(i).in(x, y)) {
+            if (right) c.remove(i); else c.rep[i] = (uint8_t)(c.rep[i] >= 16 ? 1 : c.rep[i] + 1);
+            sendChain(c); return true;
+        }
+        if (chainClearBtn().in(x, y)) { c.clear(); sendChain(c); return true; }
+        if (chainCloseBtn().in(x, y) || !chainBox().in(x, y)) { overlay = ovNone; repaint(); }
+        return true;
+    }
+
     void uiIdle() override
     {
+        if (bank->chain.active() && drag == dkNone) {          // in a chain, the view follows the music
+            const int pp = chainPlayingPattern();
+            if (pp >= 0 && pp != editPattern()) { setParamGesture(kGlobalBase + gPATTERN, (float)pp); repaint(); }
+        }
         if (!clickSent) { clickSent = true; sendClick(); }
         if (ringsShown && overlay == ovNone && nowSec() - lastRingPaint > 0.033) { lastRingPaint = nowSec(); ringsShown = false; repaint(); }
         if (!tipShown && !tipNone && drag == dkNone && overlay == ovNone && hovX >= 0.f && nowSec() - hovSince > 0.8 && nowSec() > tipBlockUntil) {

@@ -349,7 +349,7 @@ protected:
                         std::memcpy(engine->bank.machine, master->machine, sizeof(master->machine));
                         std::memcpy(engine->bank.mute, master->mute, sizeof(master->mute)); std::memcpy(engine->bank.solo, master->solo, sizeof(master->solo));
                         std::memcpy(engine->bank.kit, master->kit, sizeof(master->kit));
-                    engine->bank.scenes = master->scenes;
+                    engine->bank.scenes = master->scenes; engine->bank.chain = master->chain;
                         engine->bank.glob = master->glob;
                     }
                 }

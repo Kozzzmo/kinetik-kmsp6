@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.0
+
+- CHAIN: play a list of patterns in a loop, each a number of times (CHAIN button in the pattern box; the view follows the
+  playing pattern).
+
 ## 0.13.2
 
 - The second row of pattern buttons (A09-A16) no longer sticks out of the PATTERNS box.
