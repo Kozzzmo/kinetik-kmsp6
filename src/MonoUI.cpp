@@ -457,11 +457,11 @@ protected:
         if (mpage == mpEcho) return {718.f + (k % 6) * 74.f, 178.f + (k / 6) * 102.f, 74.f, 100.f};
         return {720.f + (k % 4) * 110.f, 178.f + (k / 4) * 102.f, 110.f, 100.f};
     }
-    R patBtn(int i) const { return {720.f + (i % 8) * 55.f, 432.f + (i / 8) * 30.f, 51.f, 26.f}; }
-    R patCopy() const { return {946.f, 400.f, 68.f, 24.f}; }
-    R patPaste() const { return {1018.f, 400.f, 68.f, 24.f}; }
-    R patClear() const { return {1090.f, 400.f, 68.f, 24.f}; }
-    R patMidi() const { return {874.f, 400.f, 68.f, 24.f}; }
+    R patBtn(int i) const { return {720.f + (i % 8) * 55.f, 424.f + (i / 8) * 28.f, 51.f, 24.f}; }   // both rows inside the panel
+    R patCopy() const { return {946.f, 398.f, 68.f, 22.f}; }
+    R patPaste() const { return {1018.f, 398.f, 68.f, 22.f}; }
+    R patClear() const { return {1090.f, 398.f, 68.f, 22.f}; }
+    R patMidi() const { return {874.f, 398.f, 68.f, 22.f}; }
     R modeBtn(int i) const { return {20.f + i * 49.f, 504.f, 47.f, 26.f}; }
     R stepPage(int i) const { return {464.f + i * 25.f, 504.f, 23.f, 26.f}; }   // 8 pages of 16 steps
     R lenMinus() const { return {666.f, 504.f, 22.f, 26.f}; }
@@ -1687,8 +1687,8 @@ protected:
         }
         const R in{716, 394, 448, 88};
         box(in, th->inner, th->radius);
-        if (!patMsg.empty()) label(728, 412, patMsg.c_str(), 10.5f, th->lock, ALIGN_LEFT | ALIGN_MIDDLE);
-        else label(728, 412, "PATTERNS", 10.5f, th->logo == lgRiso ? th->text : th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        if (!patMsg.empty()) label(728, 409, patMsg.c_str(), 10.5f, th->lock, ALIGN_LEFT | ALIGN_MIDDLE);
+        else label(728, 409, "PATTERNS", 10.5f, th->logo == lgRiso ? th->text : th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
         button(patMidi(), "MIDI", false, 10.5f);
         button(patCopy(), patClip >= 0 ? "COPIED" : "COPY", false, 10.5f);
         button(patPaste(), "PASTE", false, 10.5f);

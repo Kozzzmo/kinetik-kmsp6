@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.2
+
+- The second row of pattern buttons (A09-A16) no longer sticks out of the PATTERNS box.
+
 ## 0.13.1
 
 - Sequencer: a thin mark under the step numbers 1, 5, 9 and 13 (the beats).
