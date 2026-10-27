@@ -191,6 +191,7 @@ jobs:
           g++ -O2 -std=c++17 tests/echo.cpp -o /tmp/echo-test && /tmp/echo-test             # echo models, R TIME / DRIVE / DUCK / FREEZE
           g++ -O2 -std=c++17 -pthread tests/wavetable.cpp -o /tmp/wt-test && /tmp/wt-test     # wavetables, user tables
           g++ -O2 -std=c++17 -pthread tests/tracks8.cpp -o /tmp/t8-test && /tmp/t8-test       # 8 tracks, 0.9 compatibility
+          g++ -O2 -std=c++17 tests/click.cpp -o /tmp/ck-test && /tmp/ck-test               # metronome while recording
           ./scripts/check-shared.sh                                                  # files shared with the sister plug-in
       - name: Package
         run: |

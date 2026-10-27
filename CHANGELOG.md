@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.13.0
+
+- **ALL**: hold **Alt** (Option on Mac) while turning a knob, or switch on the new **ALL** button (right of the page tabs),
+  and the same knob moves on every track at once — each track keeps its own offset. Synth knobs only move tracks with
+  the same machine. Alt + Shift = fine. One UNDO step. (Right-click groups still work as before.)
+- **Metronome**: a click on every beat while REC records, toggled by the new **CLICK** button under REC (remembered).
+- NEON skin: the track activity LEDs are green.
+
 ## 0.12.0
 
 - **Knobs moved by an LFO**: the knob's arc (or ring of dots) now follows the value the LFO gives, in the LFO's colour, while

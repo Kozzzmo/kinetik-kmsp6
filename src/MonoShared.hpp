@@ -11,6 +11,7 @@ struct MonoDirect {
     virtual uint32_t heldMask() const = 0;     // tracks whose gate is open
     virtual int currentNote(int track) const = 0;
     virtual void setRecording(bool on) = 0;
+    virtual void setClick(bool on) = 0;     // metronome while recording
     virtual void setSelectedTrack(int t) = 0;  // MIDI AUTO routing
     virtual void playNote(int track, int note, int velocity, bool on) = 0; // on-screen / computer keyboard
     virtual void panic() = 0;

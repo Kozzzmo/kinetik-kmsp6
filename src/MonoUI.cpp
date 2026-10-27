@@ -85,7 +85,7 @@ public:
         fonts[fnBlack] = createFontFromMemory("kn-black", kFontBlack, sizeof(kFontBlack), false);
         fonts[fnLogo] = createFontFromMemory("kn-logo", kFontUnbounded, sizeof(kFontUnbounded), false);
         int sk, zm;
-        readDefaultView(sk, zm, lfoPal);
+        readDefaultView(sk, zm, lfoPal, clickOn);
         setSkin(sk, false);
         if (zm != 100) setSize((uint)std::lround(W * baseScale() * zm / 100.0), (uint)std::lround(H * baseScale() * zm / 100.0));
         viewDirty = false;
@@ -119,24 +119,25 @@ public:
        #endif
        #endif
     }
-    static void readDefaultView(int& skinOut, int& zoomOut, int* pal)
+    static void readDefaultView(int& skinOut, int& zoomOut, int* pal, bool& click)
     {
         skinOut = kDefaultSkin; zoomOut = 100;
         const std::string f = viewFile();
         if (f.empty()) return;
         if (FILE* fp = fs::open(f, "r")) {
-            int a = 0, b = 100, c[3] = {4, 5, 7};
-            const int n = std::fscanf(fp, "%d %d %d %d %d", &a, &b, &c[0], &c[1], &c[2]); std::fclose(fp);
+            int a = 0, b = 100, c[3] = {4, 5, 7}, k = 1;
+            const int n = std::fscanf(fp, "%d %d %d %d %d %d", &a, &b, &c[0], &c[1], &c[2], &k); std::fclose(fp);
+            if (n >= 6) click = k != 0;   // metronome while recording (0.17 / 0.13)
             if (n >= 1 && a >= 0 && a < kNumThemes) skinOut = a;
             if (n >= 2 && b >= 60 && b <= 300) zoomOut = b;
             for (int l = 0; l < 3; ++l) if (n >= 3 + l && c[l] >= 0 && c[l] < kLfoPal) pal[l] = c[l];   // LFO colours (0.16 / 0.12)
         }
     }
-    static void writeDefaultView(int s, int z, const int* pal)
+    static void writeDefaultView(int s, int z, const int* pal, bool click)
     {
         const std::string f = viewFile();
         if (f.empty()) return;
-        if (FILE* fp = fs::open(f, "w")) { std::fprintf(fp, "%d %d %d %d %d\n", s, z, pal[0], pal[1], pal[2]); std::fclose(fp); }
+        if (FILE* fp = fs::open(f, "w")) { std::fprintf(fp, "%d %d %d %d %d %d\n", s, z, pal[0], pal[1], pal[2], click ? 1 : 0); std::fclose(fp); }
     }
     void setSkin(int i, bool save)
     {
@@ -445,7 +446,7 @@ protected:
     R tabName() const { return {470.f, 156.f, 118.f, 26.f}; }
     R tabNext() const { return {590.f, 156.f, 22.f, 26.f}; }
     R tabLoad() const { return {618.f, 157.f, 72.f, 24.f}; }
-    R pageTab(int i) const { return {20.f + i * 75.5f, 304.f, 72.f, 28.f}; }
+    R pageTab(int i) const { return {20.f + i * 68.5f, 304.f, 65.5f, 28.f}; }   // ALL button at the end of the row
     R knob(int k) const { const int n = slots(); if (k >= n) return {-1000.f, -1000.f, 0.f, 0.f}; const float w = 680.f / n; return {20.f + k * w, 340.f, w, 120.f}; }
     R mTab(int i) const { const float w = (448.f - (kMPages - 1) * 4.f) / kMPages; return {716.f + i * (w + 4.f), 146.f, w, 28.f}; }
     // master knobs: 4 per row (8), the ECHO tab has 6 per row (12)
@@ -496,7 +497,7 @@ protected:
     R zoomBtn(int i) const { return {264.f + i * 109.f, 520.f, 101.f, 36.f}; }
     R gripR() const { return {W - 22.f, H - 22.f, 22.f, 22.f}; }
     // bottom bar
-    R recBtn() const { return {20.f, 712.f, 96.f, 40.f}; }
+    R recBtn() const { return {20.f, 706.f, 96.f, 30.f}; }
     R scaleGroup() const { return {124.f, 706.f, 222.f, 52.f}; }
     R gScaleBox() const { return {196.f, 712.f, 92.f, 40.f}; }
     R gRootBox() const { return {292.f, 712.f, 48.f, 40.f}; }
@@ -858,13 +859,15 @@ protected:
             if (sel) box(r, th->selFill);
             else { box(r, th->btnFill); frame(r, off ? Color(th->btnEdge, th->bg, 0.5f) : th->btnEdge); }
             if (grouped() && inGroup(t)) frame(r, th->lock, -1.f, 2.f);   // edited together (right-click)
+            else if (allShown() && !off) frame(r, th->logo == lgRiso ? th->text : th->accent, -1.f, 2.f);   // ALL: every track follows
             char b[16]; std::snprintf(b, sizeof(b), "%d", t + 1);
             number(r.x + 10, r.y + 20, b, 22.f, fg, ALIGN_LEFT | ALIGN_MIDDLE);
             const bool lit = ((leds >> t) & 1) || ((held >> t) & 1);
             beginPath(); circle(r.x + r.w - 13, r.y + 14, 4.5f);
-            fillColor(lit ? (sel && th->selFill.red > 0.5f && th->accent.red < 0.2f ? th->selText : th->accent)
+            const Color ledOn = th->logo == lgNeon ? Color(125, 255, 90) : (sel && th->selFill.red > 0.5f && th->accent.red < 0.2f ? th->selText : th->accent);   // NEON: green LEDs
+            fillColor(lit ? ledOn
                           : Color(fg, Color(0, 0, 0, 0.f), 0.25f)); fill();
-            if (lit && th->glow) { beginPath(); circle(r.x + r.w - 13, r.y + 14, 10); fillPaint(radialGradient(r.x + r.w - 13, r.y + 14, 2, 10, Color(th->accent, Color(0, 0, 0, 0.f), 0.5f), Color(0, 0, 0, 0.f))); fill(); }
+            if (lit && th->glow) { beginPath(); circle(r.x + r.w - 13, r.y + 14, 10); fillPaint(radialGradient(r.x + r.w - 13, r.y + 14, 2, 10, Color(ledOn, Color(0, 0, 0, 0.f), 0.5f), Color(0, 0, 0, 0.f))); fill(); }
             label(r.x + 40, r.y + 20, kMachineDefs[machineOf(t)].name, 12.f, fg, ALIGN_LEFT | ALIGN_MIDDLE);
             // what the track is doing: arp / MIDI channel / last note
             std::string info;
@@ -1563,6 +1566,7 @@ protected:
         drawPageGraphic({30.f, 190.f, 660.f, 100.f});
 
         for (int i = 0; i < kPages; ++i) button(pageTab(i), kPageNames[i], page == i, 11.f);
+        button(allBtn(), "ALL", allShown(), 11.f);
 
         for (int k = 0; k < 10; ++k) {
             const int pi = pageParam(page, k);
@@ -1570,6 +1574,7 @@ protected:
                 const float cv = sendValue(k);
                 drawKnob(knob(k), cv / 127.f, sendG(k) == gCHO_SEND ? "CHORUS" : "CHAOS", cv < 0.5f ? std::string("OFF") : std::to_string((int)std::lround(cv)), false,
                          drag == dkSend && dragIndex == k, true);
+                if (allShown()) drawAllBadge(knob(k));
                 continue;
             }
             if (euclidSlot(k)) {
@@ -1598,6 +1603,7 @@ protected:
                      drag == dkTrackKnob && dragIndex == k, true, nh > 0 ? lfoLive(v, hits, nh) / 127.f : -1.f,
                      nh > 0 ? lfoInk(hits[0].l) : Color());
             if (nh > 0) drawLfoBadge(knob(k), hits, nh);
+            if (allShown() && lockStep < 0) drawAllBadge(knob(k));
         }
     }
 
@@ -1869,6 +1875,11 @@ protected:
         } else {
             box(rb, th->btnFill); frame(rb, th->btnEdge, -1.f, 1.5f);
             iconLabel(rb.cx(), rb.cy() + 1, icRec, "REC", 13.f, th->logo == lgRiso ? th->text : th->accent);
+        }
+        {   // metronome on / off (heard while REC records)
+            const R cb = clickBtn();
+            if (clickOn) box(cb, Color(th->accent, th->btnFill, 0.55f)); else { box(cb, th->btnFill); frame(cb, th->btnEdge, -1.f, 1.f); }
+            label(cb.cx(), cb.cy() + 1, clickOn ? "CLICK ON" : "CLICK OFF", 9.f, clickOn ? th->text : th->dim, ALIGN_CENTER | ALIGN_MIDDLE);
         }
         const Color gt = th->logo == lgRiso ? th->text : th->dim;
         {   // global scale: every track snaps to it
@@ -2371,7 +2382,7 @@ protected:
     {
         char b[32]; std::snprintf(b, sizeof(b), "%d %d", skin, zoomPercent());
         setState("skin", b);      // saved with the project
-        writeDefaultView(skin, zoomPercent(), lfoPal); // and used by new instances
+        writeDefaultView(skin, zoomPercent(), lfoPal, clickOn); // and used by new instances
         viewDirty = false;
     }
     void onResize(const ResizeEvent& ev) override
@@ -2729,23 +2740,10 @@ protected:
     // selected track is always in it. Knobs move every track of the group by the same amount (each keeps its own
     // offset), machine and TRACK / ARP settings are set on all of them. Left-click on a track ends the group.
     uint8_t trackGroup = 0;   // bit t = track t is edited together with selTrack
-    float grpBase[kTracks] = {};
     bool grouped() const { return (trackGroup & ~(1u << selTrack)) != 0; }
     bool inGroup(int t) const { return t == selTrack || ((trackGroup >> t) & 1); }
     // other tracks of the group (not selTrack)
     std::vector<int> groupOthers() const { std::vector<int> v; for (int t = 0; t < kTracks; ++t) if (t != selTrack && ((trackGroup >> t) & 1)) v.push_back(t); return v; }
-    void groupBegin(int pi)
-    {
-        for (int t = 0; t < kTracks; ++t) grpBase[t] = tp(t, pi);
-        for (int t : groupOthers()) editParameter(tpIndex(t, pi), true);
-    }
-    void groupEnd(int pi) { for (int t : groupOthers()) editParameter(tpIndex(t, pi), false); }
-    // selTrack's value went from grpBase[selTrack] to v: move the others by the same amount
-    void groupFollow(int pi, float v)
-    {
-        const float d = v - grpBase[selTrack];
-        for (int t : groupOthers()) setParam(tpIndex(t, pi), clampf(grpBase[t] + d, 0.f, 127.f));
-    }
     void setKitGroup(int f, int v)
     {
         setKit(selTrack, f, v);
@@ -2822,7 +2820,7 @@ protected:
             if (selLockDiffers(pi, iv)) writeLock(pi, iv);
         } else {
             setParam(tpIndex(selTrack, pi), v);
-            if (grouped()) groupFollow(pi, v);
+            if (!mIdx.empty()) multiFollow(v);
         }
         repaint();
     }
@@ -2964,7 +2962,9 @@ protected:
         if (shiftL().in(x, y)) return "Move the steps of this track one step earlier.";
         if (shiftR().in(x, y)) return "Move the steps of this track one step later.";
         if (fillBtn().in(x, y)) return "Hold the FILL condition on: steps set to FILL play.";
-        if (recBtn().in(x, y)) return "REC: knob moves while playing are recorded as parameter locks.";
+        if (recBtn().in(x, y)) return "REC: while playing, knob moves are recorded as parameter locks and the notes you play (MIDI or on-screen keyboard) as steps.";
+        if (clickBtn().in(x, y)) return "CLICK: a metronome on every beat while REC records (main output). Click to turn it on or off.";
+        if (allBtn().in(x, y)) return "ALL: knobs move every track at once, each keeping its own offset (or hold Alt / Option while turning). Synth knobs: tracks with the same machine only.";
         { static const char* rt[5] = {"New random sound for this track", "New random sounds on every track, steps unchanged", "New random steps for this track", "New random pattern on every track", "Random kit, effects and pattern"}; for (int i = 0; i < 5; ++i) if (rndBtn(i).in(x, y)) return std::string(rt[i]) + " (undo restores).";  }
         for (int t = 0; t < kTracks; ++t) {
             if (soloBtn(t).in(x, y)) return "Solo: only the soloed tracks play.";
@@ -2996,6 +2996,8 @@ protected:
         const float x = ev.pos.getX() / sx, y = ev.pos.getY() / sx;
         if (tipShown) { tipShown = false; repaint(); }
         tipBlockUntil = nowSec() + 1.0;   // no tooltip right after a click
+        altHeld = (ev.mod & kModifierAlt) != 0;
+        if (ev.press) allNow = allLatch || altHeld;   // ALL for the gesture that starts here
         if (!ev.press) {
             if (keyNote >= 0) { playNote(keyTrack, keyNote, 0, false); keyNote = -1; }
             if (drag == dkLink && std::fabs(y - dragY) < 3.f) {
@@ -3006,14 +3008,13 @@ protected:
             }
             if (drag == dkTrackKnob && std::fabs(y - dragY) < 3.f && page >= pgLfo1 && page <= pgLfo3 && (dragIndex == 4 || dragIndex == 5)) {
                 editParameter(tpIndex(selTrack, pageParam(page, dragIndex)), false);
-                if (grouped()) groupEnd(pageParam(page, dragIndex));
+                multiEnd();
                 drag = dkNone; openDestMenu(page - pgLfo1);    // a click (no drag) on DEST / TARGET opens the list
                 return true;
             }
-            if (drag == dkTrackKnob && lockStep < 0 && !recording()) {
+            if (drag == dkTrackKnob && lockStep < 0 && !recording())
                 editParameter(tpIndex(selTrack, pageParam(page, dragIndex)), false);
-                if (grouped()) groupEnd(pageParam(page, dragIndex));
-            }
+            if (drag == dkTrackKnob || drag == dkSend) multiEnd();
             recDirty = false;
             if (drag == dkMasterKnob) editParameter(kGlobalBase + masterParam(mpage, dragIndex), false);
             if (drag == dkTempo) editParameter(kGlobalBase + gTEMPO, false);
@@ -3106,6 +3107,7 @@ protected:
             }
         }
         if (recBtn().in(x, y)) { setRec(!rec); repaint(); return true; }
+        if (clickBtn().in(x, y)) { clickOn = !clickOn; sendClick(); saveView(); repaint(); return true; }
         for (int i = 0; i < 5; ++i) if (rndBtn(i).in(x, y)) { static const int what[5] = {0, 4, 1, 2, 3}; randomize(what[i]); return true; }
         if (undoBtn().in(x, y)) { if (right) redo(); else undo(); return true; }   // right-click = redo
         if (presetBtn().in(x, y)) { openPresets(); return true; }
@@ -3126,6 +3128,7 @@ protected:
             repaint(); return true;
         }
         for (int i = 0; i < kPages; ++i) if (pageTab(i).in(x, y)) { page = i; repaint(); return true; }
+        if (allBtn().in(x, y)) { allLatch = !allLatch; repaint(); return true; }
         for (int i = 0; i < kMPages; ++i)
             if (mTab(i).in(x, y)) {
                 if (mpage == i && fxTabOf(i) >= 0) overlay = ovFx;   // click the active tab: its presets
@@ -3152,9 +3155,14 @@ protected:
         for (int k = 0; k < 10; ++k)
             if (sendG(k) >= 0 && knob(k).in(x, y)) {
                 const uint32_t idx = kGlobalBase + sendIndex(k);
-                if (dbl) { setParamGesture(idx, globalDefault(sendIndex(k))); repaint(); return true; }
+                if (dbl) {
+                    setParamGesture(idx, globalDefault(sendIndex(k)));
+                    for (uint32_t o : sendOthers(k)) setParamGesture(o, globalDefault((int)(o - kGlobalBase)));
+                    repaint(); return true;
+                }
                 drag = dkSend; dragIndex = k; dragY = y; dragStart = sendValue(k);
                 editParameter(idx, true);
+                multiBegin(idx, sendOthers(k));
                 repaint(); return true;
             }
         if (mpage == mpFilter && mfOnPad().in(x, y)) { setParamGesture(kGlobalBase + gMF_ON, gp(gMF_ON) > 0.5f ? 0.f : 1.f); repaint(); return true; }
@@ -3182,12 +3190,13 @@ protected:
                 if (lockStep >= 0) writeLock(pi, kNoLock);
                 else {
                     setParamGesture(tpIndex(selTrack, pi), pi < 8 ? kMachineDefs[machineOf(selTrack)].def[pi] : kFxDefaults[pi - 8]);
-                    for (int t : groupOthers()) setParamGesture(tpIndex(t, pi), pi < 8 ? kMachineDefs[machineOf(t)].def[pi] : kFxDefaults[pi - 8]);
+                    for (int t = 0; t < kTracks; ++t)
+                        if (knobTarget(t, pi)) setParamGesture(tpIndex(t, pi), pi < 8 ? kMachineDefs[machineOf(t)].def[pi] : kFxDefaults[pi - 8]);
                 }
                 repaint(); return true;
             }
             drag = dkTrackKnob; dragIndex = k; dragY = y; dragStart = knobValue(k); recDirty = false;
-            if (lockStep < 0 && !recording()) { editParameter(tpIndex(selTrack, pi), true); if (grouped()) groupBegin(pi); }
+            if (lockStep < 0 && !recording()) { editParameter(tpIndex(selTrack, pi), true); multiBegin(tpIndex(selTrack, pi), knobOthers(pi)); }
             else if (lockStep >= 0 && pat().locks[selTrack][lockStep][pi] == kNoLock) setKnob(k, dragStart);
             repaint(); return true;
         }
@@ -3326,6 +3335,7 @@ protected:
 
     bool onMotion(const MotionEvent& ev) override
     {
+        if (((ev.mod & kModifierAlt) != 0) != altHeld) { altHeld = !altHeld; repaint(); }   // ALL shown while Alt is held
         {   // hover tracking for tooltips
             const float hx = ev.pos.getX() / sx, hy = ev.pos.getY() / sx;
             if (std::fabs(hx - hovX) > 3.f || std::fabs(hy - hovY) > 3.f) {
@@ -3370,7 +3380,9 @@ protected:
             break;
         }
         case dkTrackKnob: setKnob(dragIndex, v); break;
-        case dkSend: if (sendG(dragIndex) >= 0) setParam(kGlobalBase + sendIndex(dragIndex), clampf(v, 0.f, 127.f)); repaint(); break;
+        case dkSend:
+            if (sendG(dragIndex) >= 0) { setParam(kGlobalBase + sendIndex(dragIndex), clampf(v, 0.f, 127.f)); if (!mIdx.empty()) multiFollow(clampf(v, 0.f, 127.f)); }
+            repaint(); break;
         case dkEuclid: {
             const int n = tlen(selTrack);
             int nv = (int)std::lround(dragStart + (dragY - y) * 0.08f);
@@ -3415,10 +3427,12 @@ protected:
             repaint(); return true;
         }
         if (d == 0.f || overlay != ovNone) return false;
+        allNow = allLatch || (ev.mod & kModifierAlt) != 0;
         for (int k = 8; k < mSlots(); ++k)   // ECHO tab knobs 9-12
             if (mKnob(k).in(x, y) && masterParam(mpage, k) >= 0) { setMaster(k, gp(masterParam(mpage, k)) + d, true); return true; }
         for (int k = 0; k < 10; ++k) {
             if (knob(k).in(x, y) && sendG(k) >= 0) {
+                for (uint32_t o : sendOthers(k)) setParamGesture(o, clampf(values[o] + d, 0.f, 127.f));
                 setParamGesture(kGlobalBase + sendIndex(k), clampf(sendValue(k) + d, 0.f, 127.f)); repaint(); return true;
             }
             if (knob(k).in(x, y) && euclidSlot(k)) {
@@ -3434,9 +3448,9 @@ protected:
             if (knob(k).in(x, y) && pageParam(page, k) >= 0) {
                 const uint32_t idx = tpIndex(selTrack, pageParam(page, k));
                 const bool gesture = lockStep < 0 && !recording();
-                if (gesture) { editParameter(idx, true); if (grouped()) groupBegin(pageParam(page, k)); }
+                if (gesture) { editParameter(idx, true); multiBegin(idx, knobOthers(pageParam(page, k))); }
                 setKnob(k, knobValue(k) + d);
-                if (gesture) { editParameter(idx, false); if (grouped()) groupEnd(pageParam(page, k)); }
+                if (gesture) { editParameter(idx, false); multiEnd(); }
                 recDirty = false;
                 return true;
             }
@@ -3623,6 +3637,7 @@ protected:
 
     void uiIdle() override
     {
+        if (!clickSent) { clickSent = true; sendClick(); }
         if (ringsShown && overlay == ovNone && nowSec() - lastRingPaint > 0.033) { lastRingPaint = nowSec(); ringsShown = false; repaint(); }
         if (!tipShown && !tipNone && drag == dkNone && overlay == ovNone && hovX >= 0.f && nowSec() - hovSince > 0.8 && nowSec() > tipBlockUntil) {
             tipText = tipAt(hovX, hovY);
@@ -3646,6 +3661,7 @@ private:
     float values[kTotalParams];
     std::unique_ptr<Bank> bank;
     MonoDirect* direct = nullptr;
+    bool clickSent = false;
     float sx = 1.f;
     int selTrack = 0, page = pgSynth, mpage = mpEcho, mode = mdTrig, stepPg = 0, lockStep = -1, noteStep = -1;
     Overlay overlay = ovNone;
@@ -3852,6 +3868,56 @@ private:
         }
         if (lfoColChip().in(x, y)) { lfoPick = l; repaint(); return true; }
         return false;
+    }
+    // ------------------------------------------------------------------ ALL: one knob moves every track
+    // Alt (Option) + knob, or the ALL button: the same parameter of every track moves by the same amount (each track
+    // keeps its own offset). Synth knobs only move the tracks that use the same machine.
+    bool allLatch = false, altHeld = false, allNow = false;
+    bool allShown() const { return allLatch || altHeld; }
+    R allBtn() const { return {640.f, 304.f, 58.f, 28.f}; }
+    std::vector<uint32_t> mIdx; std::vector<float> mBase; float mBase0 = 0.f;
+    // track t follows the selected track's knob pi
+    bool knobTarget(int t, int pi) const
+    {
+        if (t == selTrack) return false;
+        return (allNow && (pi >= 8 || machineOf(t) == machineOf(selTrack))) || ((trackGroup >> t) & 1) != 0;
+    }
+    std::vector<uint32_t> knobOthers(int pi) const
+    {
+        std::vector<uint32_t> v;
+        for (int t = 0; t < kTracks; ++t) if (knobTarget(t, pi)) v.push_back(tpIndex(t, pi));
+        return v;
+    }
+    uint32_t sendIdxFor(int k, int t) const { return kGlobalBase + (sendG(k) == gCHO_SEND ? choSendG(t) : chaSendG(t)); }
+    std::vector<uint32_t> sendOthers(int k) const
+    {
+        std::vector<uint32_t> v;
+        if (sendG(k) < 0) return v;
+        for (int t = 0; t < kTracks; ++t)
+            if (t != selTrack && ((allNow && (!(false) || machineOf(t) == machineOf(selTrack))) || ((trackGroup >> t) & 1) != 0)) v.push_back(sendIdxFor(k, t));
+        return v;
+    }
+    void multiBegin(uint32_t sel, const std::vector<uint32_t>& others)
+    {
+        multiEnd();
+        mIdx = others; mBase0 = values[sel];
+        for (uint32_t i : mIdx) { mBase.push_back(values[i]); editParameter(i, true); }
+    }
+    void multiFollow(float v)
+    {
+        const float d = v - mBase0;
+        for (size_t j = 0; j < mIdx.size(); ++j) setParam(mIdx[j], clampf(mBase[j] + d, 0.f, 127.f));
+    }
+    void multiEnd() { for (uint32_t i : mIdx) editParameter(i, false); mIdx.clear(); mBase.clear(); }
+    void drawAllBadge(const R& r) { label(r.x + 6, r.y + 8, "ALL", 8.5f, th->logo == lgRiso ? th->text : th->accent, ALIGN_LEFT | ALIGN_MIDDLE); }
+
+    // ------------------------------------------------------------------ metronome while recording (per user)
+    bool clickOn = true;
+    R clickBtn() const { return {20.f, 740.f, 96.f, 18.f}; }
+    void sendClick()
+    {
+        if (direct) direct->setClick(clickOn);
+        else setState("cmd", clickOn ? "click 1" : "click 0");
     }
     bool euclidSlot(int k) const { return page == pgArp && (k == 6 || k == 7); }
     void applyEuclid(int t)

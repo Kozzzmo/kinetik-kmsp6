@@ -278,3 +278,19 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
   out x depth / 2, as the engine) in the LFO colour, pointer on the set value; `drawLfoBadge`. Colours: `lfoPal[3]`
   (index into `lfoPalColor`, 8 colours, no pink; defaults green #7dff5a / yellow / white, owner's choice; WHITE = ink on RISO), picked with the COLOR chip of the LFO page
   (`lfoColChip`, `lfoSwatch`, `lfoColorClick`), saved per user in the view file ("skin zoom c1 c2 c3"), not in projects.
+
+## Added in KDSP-16 0.17 / KMSP-6 0.13 (both plug-ins)
+
+- ALL (owner's design: Alt + knob, relative, plus a latch button): `allLatch` / `altHeld` (from mouse and motion `ev.mod`) /
+  `allNow` (fixed when a gesture starts, also on scroll); `knobTarget(t, pi)` (ALL: every other track, synth knobs pi < 8
+  only with the same machine; KMSP also the right-click group) -> `knobOthers(pi)`; sends `sendOthers(k)` (KDSP kick
+  ATTACK: same machine). `multiBegin(sel, others)` records the bases + editParameter, `multiFollow(v)` moves them by the
+  same delta, `multiEnd()`. Step locks / REC never use it. UI: `allBtn()` at the end of the page tab row (tabs narrowed),
+  "ALL" badge on the knobs and accent frames on the track buttons while shown (`allShown()`).
+- Metronome: `Click.hpp` (shared) in the Engine, added to the main bus after the master FX while `recording && playing`;
+  1760 Hz on bar starts (4/4 from the song position), 1320 Hz on beats. `click.enabled` from the UI (`setClick` direct
+  call or cmd `click 0/1`, sent at the first `uiIdle`); CLICK button under REC (`clickBtn()`, REC is 30 px high now),
+  saved per user as the 6th value of the view file.
+- NEON: lit track LEDs `Color(125, 255, 90)` (`ledOn` in drawTracks).
+- KMSP-6: `MonoDirect::setClick`, cmd `click 0/1`; test `tests/click.cpp`. The right-click group now goes through the same
+  multi helpers (old `groupBegin/groupFollow/groupEnd` removed).

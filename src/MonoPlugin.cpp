@@ -59,6 +59,7 @@ public:
     uint32_t heldMask() const override { return engine->outGate; }
     int currentNote(int track) const override { return engine->outNote[track < 0 ? 0 : (track >= kTracks ? kTracks - 1 : track)]; }
     void setRecording(bool on) override { recFlag.store(on); }
+    void setClick(bool on) override { clickFlag.store(on); }
     void setSelectedTrack(int t) override { selTrack.store(clampi(t, 0, kTracks - 1)); }
     void playNote(int track, int note, int velocity, bool on) override
     {
@@ -289,6 +290,7 @@ protected:
                 else if (line.rfind("gh ", 0) == 0) engine->setGlitchHold(std::atoi(c + 3) != 0);   // glitch HOLD
                 else if (line.rfind("sel ", 0) == 0) selTrack.store(clampi(std::atoi(c + 4), 0, kTracks - 1));
                 else if (line.rfind("rec ", 0) == 0) recFlag.store(std::atoi(c + 4) != 0);
+                else if (line.rfind("click ", 0) == 0) clickFlag.store(std::atoi(c + 6) != 0);   // metronome while recording
                 else if (line.rfind("non ", 0) == 0 || line.rfind("noff ", 0) == 0) {
                     const bool on = line[1] == 'o' && line[2] == 'n';
                     int t = 0, n = 60, v = 100;
@@ -373,6 +375,7 @@ protected:
         }
         engine->fill = fillFlag.load();
         engine->recording = recFlag.load();
+        engine->click.enabled = clickFlag.load();
         if (panicFlag.exchange(false)) { engine->allNotesOff(); engine->resetExpression(); }
 
         Transport tp;
@@ -444,7 +447,7 @@ private:
     UserWavePtr wavPend[kTracks], wavLive[kTracks], wavGrave[kTracks];
     bool wavSet[kTracks] = {};
     std::atomic<bool> wavDirty{false};
-    std::atomic<bool> fillFlag{false}, recFlag{false}, panicFlag{false};
+    std::atomic<bool> fillFlag{false}, recFlag{false}, panicFlag{false}, clickFlag{true};
     std::atomic<int> selTrack{0};
     std::atomic<bool> licensed{false};
     uint64_t demoPos = 0; float demoGain = 1.f;

@@ -3,6 +3,7 @@
 #pragma once
 #include "Bank.hpp"
 #include "MasterFx.hpp"
+#include "Click.hpp"
 #include "Voice.hpp"
 #include <vector>
 #include <algorithm>
@@ -105,6 +106,7 @@ public:
     Bank bank;
     bool fill = false;
     bool recording = false;          // REC armed in the UI
+    Click click;                     // metronome while recording
     int outStep = -1, outPattern = 0;
     uint32_t outLeds = 0;
     std::atomic<uint32_t> outGate{0};             // tracks with an open gate
@@ -148,6 +150,7 @@ public:
         for (auto& tr : tracks) tr.init(sr);
         for (int t = 0; t < kTracks; ++t) { tracks[t].voice.machine = -1; tracks[t].voice.setMachine(bank.machine[t]); }
         fx.init(sr);
+        click.init(sr);
         sendDL.assign(64, 0); sendDR.assign(64, 0); sendRL.assign(64, 0); sendRR.assign(64, 0); sendCL.assign(64, 0); sendCR.assign(64, 0); sendGL.assign(64, 0); sendGR.assign(64, 0);
         for (int b = 0; b < kOutBuses; ++b) { busL[b].assign(64, 0); busR[b].assign(64, 0); }
         events.reserve(4096);
@@ -157,7 +160,7 @@ public:
     void reset()
     {
         for (auto& tr : tracks) { tr.stage = Track::stIdle; tr.env = 0; tr.heldCount = 0; tr.arpOn = false; tr.gateLeft = 0; }
-        fx.reset();
+        fx.reset(); click.reset();
         wasPlaying = false; internalBeat = 0; prevPlayParam = false; usingInternal = false;
     }
 
@@ -287,6 +290,9 @@ public:
             renderSegment(seg, end - pos);
             pos = end;
         }
+
+        // metronome while recording (main output, after the master effects)
+        click.process(outs[0], outs[1], frames, b0, beatsPerFrame, recording && playing);
 
         uint32_t leds = 0;
         for (int t = 0; t < kTracks; ++t) {
