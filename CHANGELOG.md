@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.1
+
+- Sequencer: a thin mark under the step numbers 1, 5, 9 and 13 (the beats).
+
 ## 0.13.0
 
 - **ALL**: hold **Alt** (Option on Mac) while turning a knob, or switch on the new **ALL** button (right of the page tabs),

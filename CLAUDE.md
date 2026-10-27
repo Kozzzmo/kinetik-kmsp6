@@ -294,3 +294,4 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
 - NEON: lit track LEDs `Color(125, 255, 90)` (`ledOn` in drawTracks).
 - KMSP-6: `MonoDirect::setClick`, cmd `click 0/1`; test `tests/click.cpp`. The right-click group now goes through the same
   multi helpers (old `groupBegin/groupFollow/groupEnd` removed).
+- Beat marks (0.13.1): 1 px line under step numbers with `s % 4 == 0` (drawSequencer).

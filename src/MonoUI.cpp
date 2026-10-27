@@ -1767,6 +1767,7 @@ protected:
             } else box(led, inLen ? th->ledOff : Color(th->ledOff, th->bg, 0.5f), 2.f);
             char nb[8]; std::snprintf(nb, sizeof(nb), "%d", s + 1);
             label(r.x + 6, r.y + 24, nb, 9.f, inLen ? th->dim : th->faint, ALIGN_LEFT | ALIGN_MIDDLE);
+            if (s % 4 == 0) box({r.x + 6.f, r.y + 30.f, s + 1 < 10 ? 7.f : 13.f, 1.f}, inLen ? th->dim : th->faint);   // beat marks under 1, 5, 9, 13
             if (p.hasLocks(selTrack, s)) { beginPath(); circle(r.x + r.w - 9, r.y + 24, 2.8f); fillColor(th->lock); fill(); }
             if (on) {
                 char nn[8];
