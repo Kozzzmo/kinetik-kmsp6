@@ -17,7 +17,7 @@ synthesis is original code. Sister product: **Kinetik KDSP-16** (drums), reposit
 | `MonoShared.hpp` | `MonoDirect` interface: the UI talks to the DSP directly (DISTRHO_PLUGIN_WANT_DIRECT_ACCESS) for live notes, recording queue, held-note display |
 | `MonoPlugin.cpp` | DPF glue; MIDI routing: a track whose MIDI channel matches gets the notes, otherwise the selected track (AUTO) |
 | `MonoUI.cpp` | the UI (1180×800 canvas): 9 pages (SYNTH AMP FILTER FX LFO1-3 TRACK ARP); the upper LCD draws a graphic per page (`drawPageGraphic`: scope rendered by a private `MonoVoice`, envelope, filter curve, FX, LFO, scale keyboard, arp roll); LFO destination menu (`ovDest`), master tabs ECHO / REVERB / MASTER / FILTER / LINK (`drawLink`; FILTER = `gMF_HP/LP/RESO`, KMSP-only globals after `gREV_MOD`, processed by `Engine::masterFilter` after `MasterFx` so MasterFx.hpp stays identical to KDSP-16), global SCALE box bottom left, RANDOMIZE SOUND / ALL SOUNDS (every track, no steps) / SEQUENCE / PATTERN / EVERYTHING + UNDO, preset name fitted inside the PRESETS button (`fitNumber`), 9 step modes (TRIG ACCENT SLIDE NOTE LEN RATCH COND TIME CHORD), multi-step selection (right-click on steps), multi-track group (right-click on track buttons, `trackGroup`: knobs = relative move via `groupBegin/groupFollow/groupEnd`, machine and kit fields = same value via `setMachineGroup` / `setKitGroup`; step locks stay on the selected track only), on-screen 3-octave keyboard, PC keys, step entry |
-| `Presets.hpp` | 32 factory presets (categories, level trims); `PB::seq()` takes note strings ("C2 . ~D#2 - !G1", x/X = hit on C5) |
+| `Presets.hpp` | factory presets (categories, level trims); `PB::seq()` takes note strings ("C2 . ~D#2 - !G1", x/X = hit on C5); the pieces are in `PresetsV2.hpp` (0.15: 17 presets of 64 steps, `PB2` helpers `mBars` `mRep` `cyc` `lfoS` `chain` `send` `echo` `verb` `mix({dB...})` = per-track level from the mix checker, `off`) |
 
 `MonoUI.cpp` is the edited file (it was first assembled from parts; edit it directly now).
 User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
@@ -301,3 +301,10 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
 
 - Same as KDSP-16 0.19: `Chain.hpp` (shared), `Engine::chainPl` (start with skipFirst, `peek` for `patFor`, `next` in `fire`),
   `Engine::currentPattern()`, CHAIN button + `ovChain` window, view follows the chain. Test: `tests/chain.cpp` (shared).
+
+## 0.15.0 (with KDSP-16 0.20.0) — new factory presets
+
+- `applyLevelTrim(values, db, &bank)` (both plug-ins): after the master VOLUME, the rest scales every track VOL knob and
+  VOL lock by the same factor, limited so the loudest one reaches 127 (it used to clamp tracks one by one and changed the
+  balance); quiet presets use a gentle master compression ("glue": CMP THR 80, RATIO 30) to reach the loudness.
+  `tests/audit.cpp` (shared) passes the bank.

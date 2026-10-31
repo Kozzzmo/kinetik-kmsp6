@@ -35,7 +35,7 @@ static float gExtraDb = 0.f;   // --fit: extra level trim on top of the preset's
 static void load(int preset, Engine& e, Bank& b, std::vector<float>& v)
 {
     v.assign(kTotalParams, 0.f); buildPreset(preset, v.data(), b);
-    applyLevelTrim(v.data(), gExtraDb);
+    applyLevelTrim(v.data(), gExtraDb, &b);
     e.init(kSr); e.bank = b;
     for (int t = 0; t < kTracks; t++) for (int p = 0; p < kTrackParams; p++) e.trackParam[t][p] = v[tpIndex(t, p)];
     for (int g = 0; g < gOUT_STEP; g++) e.global[g] = v[kGlobalBase + g];

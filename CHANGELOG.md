@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.0
+
+- **New factory presets.** The whole set was rewritten: 17 pieces (acid, techno, house, dub, synthwave, retro,
+  experimental, ambient; new HOUSE category). Each one is 4 bars (64 steps) with bass, chords, pads, leads and colours:
+  slides and ties, accents, chord shapes that change per step, conditions, ratchets, micro-timing, filter / envelope
+  locks, synced LFOs, arpeggiators, echo / reverb / chorus / CHAOS sends and, where it helps, a second pattern in a CHAIN.
+- Every track of every preset was levelled with a mix measurement (bass on top, chords and leads a few dB under, pads,
+  bells and noises lower) and every preset plays at about the same loudness.
+- Your own presets and projects are not changed.
+
 ## 0.14.0
 
 - CHAIN: play a list of patterns in a loop, each a number of times (CHAIN button in the pattern box; the view follows the
