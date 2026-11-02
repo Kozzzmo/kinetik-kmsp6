@@ -545,7 +545,7 @@ static void m2Ambient(PB& b)
     q.lfoS(0, 0, ls4Bars, 40, 1, 0, 0); q.lfoS(1, 0, ls8Bars, 30, 1, 0, tpCUTOFF); q.lfoS(2, 0, ls2Bars, 50, 1, 0, 0);
     q.lfoS(5, 0, ls4Bars, 70, 1, 0, 0); q.lfoS(4, 0, ls1Bar, 40, 1, 0, tpPAN);
     q.send(0, 0, 100, 40); q.send(1, 0, 110, 40); q.send(2, 30, 110); q.send(3, 70, 90); q.send(4, 80, 90); q.send(5, 0, 100);
-    q.echo(d4, 75, emDiffuse, 70, 66); q.verb(127, 70, rmShimmer, 60, 90, 40);
+    q.echo(d4, 75, emDiffuse, 70, 66); q.verb(127, 45, rmShimmer, 60, 110, 40);
     b.g(gCHO_MODEL, 50); b.g(gCHO_LEV, 60);
     b.g(gTEMPO, 80);
     q.vol(0, 80); q.vol(1, 70); q.vol(2, 70); q.vol(3, 66); q.vol(4, 70); q.vol(5, 50); q.vol(6, 86);

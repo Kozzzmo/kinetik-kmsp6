@@ -308,3 +308,12 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
   VOL lock by the same factor, limited so the loudest one reaches 127 (it used to clamp tracks one by one and changed the
   balance); quiet presets use a gentle master compression ("glue": CMP THR 80, RATIO 30) to reach the loudness.
   `tests/audit.cpp` (shared) passes the bank.
+
+## 0.15.1 — SHIMMER reverb rebuilt (owner: "le son est pauvre et souvent le même", "craque quand on passe midi")
+
+- The old SHIMMER added an octave-up copy of the tail back into the tank input on top of the normal feedback: the loop gain
+  passed 1 around the middle of MOD (saturation, crackle) and the regenerating octave covered the source. Now (idea from the
+  MIT-licensed Clouds / Parasites reverb, no code copied) three of the eight lines are also read by two Hann-windowed taps
+  moving at twice the speed; the feedback is plain x keep + shifted x amount with keep^2 + 0.75 amount^2 = 1, so the energy
+  never grows; a 30 Hz high-pass and a soft ceiling sit in the loop; the shifted taps run a few cents apart per line.
+  Test (KDSP-16): `tests/shimmer.cpp` (stable at every MOD, MOD swept with a held tone stays bounded, tail dies, octave added).

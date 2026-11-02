@@ -195,7 +195,7 @@ static const PresetDef kPresets[] = {
     {"Chiptune", "140 BPM pulse waves: bass, lead, arp and noise drums", m2Chiptune, true, pcRetro, 2.2f},
     {"Lo-Fi Keys", "84 BPM: FM e-piano with tremolo, wobbling organ, plucked bass, hiss", m2LofiKeys, true, pcRetro, 11.9f},
     {"Chaos Arps", "two arpeggiators cut up by CHAOS over a dry bass", m2ChaosArps, true, pcExperimental, 9.6f},
-    {"Ambient Drift", "80 BPM: pads, choir, bells and plucks into a shimmer reverb", m2Ambient, true, pcAmbient, -5.2f},
+    {"Ambient Drift", "80 BPM: pads, choir, bells and plucks into a shimmer reverb", m2Ambient, true, pcAmbient, -3.4f},
 };
 static constexpr int kNumPresets = (int)(sizeof(kPresets) / sizeof(kPresets[0]));
 
