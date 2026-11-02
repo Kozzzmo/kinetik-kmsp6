@@ -6,6 +6,7 @@
 #include "Presets.hpp"
 #include "Help.hpp"
 #include "Skins.hpp"
+#include "Frame.hpp"
 #include "LogoMark.hpp"
 #include "Fonts.hpp"
 #include "License.hpp"
@@ -37,7 +38,7 @@ START_NAMESPACE_DISTRHO
 using namespace kn;
 using DGL_NAMESPACE::Color;
 
-static constexpr float W = 1180.f, H = 800.f;
+static constexpr float W = kframe::kW, H = kframe::kH;   // common Kinetik frame (Frame.hpp)
 
 struct R {
     float x, y, w, h;
@@ -63,6 +64,7 @@ static const char* const kMachineShort[kMachines] = {
 
 class MonoUI : public UI
 {
+    template <class, class> friend struct kframe::Draw;
 public:
     MonoUI()
         : UI(W, H)
@@ -468,45 +470,44 @@ protected:
     R lenMinus() const { return {666.f, 504.f, 22.f, 26.f}; }
     R lenBox() const { return {690.f, 504.f, 56.f, 26.f}; }
     R lenPlus() const { return {748.f, 504.f, 22.f, 26.f}; }
-    R fillBtn() const { return {778.f, 504.f, 52.f, 26.f}; }
-    R trkCopy() const { return {838.f, 504.f, 62.f, 26.f}; }
-    R trkPaste() const { return {904.f, 504.f, 62.f, 26.f}; }
-    R trkClear() const { return {970.f, 504.f, 62.f, 26.f}; }
-    R lockClrAll() const { return {1036.f, 504.f, 66.f, 26.f}; }
-    R shiftL() const { return {1106.f, 504.f, 26.f, 26.f}; }
-    R shiftR() const { return {1134.f, 504.f, 26.f, 26.f}; }
+    static R fr(const kframe::Rc& c) { return {c.x, c.y, c.w, c.h}; }
+    R fillBtn() const { return fr(kframe::fillBtn()); }
+    // common order: modes | pages | LEN | < > | COPY PASTE CLEAR | -LOCKS
+    R shiftL() const { return {778.f, 504.f, 26.f, 26.f}; }
+    R shiftR() const { return {806.f, 504.f, 26.f, 26.f}; }
+    R trkCopy() const { return {840.f, 504.f, 62.f, 26.f}; }
+    R trkPaste() const { return {906.f, 504.f, 62.f, 26.f}; }
+    R trkClear() const { return {972.f, 504.f, 62.f, 26.f}; }
+    R lockClrAll() const { return {1038.f, 504.f, 66.f, 26.f}; }
     R stepBtn(int i) const { return {20.f + i * 71.25f, 538.f, 66.f, 76.f}; }
     // keyboard
-    R octDown() const { return {20.f, 624.f, 34.f, 66.f}; }
-    R octBox() const { return {56.f, 624.f, 60.f, 66.f}; }
-    R octUp() const { return {118.f, 624.f, 34.f, 66.f}; }
-    static constexpr float kKeyX = 162.f, kKeyY = 624.f, kKeyW = 29.f, kKeyH = 66.f, kBlackW = 19.f, kBlackH = 40.f;
+    R octDown() const { return {20.f, 636.f, 34.f, 72.f}; }
+    R octBox() const { return {56.f, 636.f, 60.f, 72.f}; }
+    R octUp() const { return {118.f, 636.f, 34.f, 72.f}; }
+    static constexpr float kKeyX = 162.f, kKeyY = 636.f, kKeyW = 29.f, kKeyH = 72.f, kBlackW = 19.f, kBlackH = 44.f;
     static constexpr int kKbOctaves = 3;
-    R pcKeysBtn() const { return {812.f, 624.f, 120.f, 31.f}; }
-    R panicBtn() const { return {812.f, 659.f, 120.f, 31.f}; }
+    R pcKeysBtn() const { return {812.f, 636.f, 120.f, 34.f}; }
+    R panicBtn() const { return {812.f, 674.f, 120.f, 34.f}; }
     // header
     R patLenBox() const { return {396.f, 9.f, 70.f, 40.f}; }
     R scaleBox() const { return {470.f, 9.f, 56.f, 40.f}; }
     R swingBox() const { return {530.f, 9.f, 78.f, 40.f}; }
     R accBox() const { return {612.f, 9.f, 80.f, 40.f}; }
     R helpBtn() const { return {340.f, 156.f, 26.f, 26.f}; }
-    R playBtn() const { return {840.f, 9.f, 84.f, 40.f}; }
-    R tempoBox() const { return {932.f, 9.f, 110.f, 40.f}; }
-    R skinBtn() const { return {1050.f, 9.f, 116.f, 40.f}; }
+    R playBtn() const { return fr(kframe::playBtn()); }
+    R tempoBox() const { return fr(kframe::tempoBox()); }
+    R skinBtn() const { return fr(kframe::skinBtn()); }
     R viewBox() const { return {240.f, 130.f, 700.f, 520.f}; }
     R skinRow(int i) const { return {264.f + (i % 2) * 330.f, 184.f + (i / 2) * 148.f, 316.f, 136.f}; }
     R zoomBtn(int i) const { return {264.f + i * 109.f, 520.f, 101.f, 36.f}; }
     R gripR() const { return {W - 22.f, H - 22.f, 22.f, 22.f}; }
     // bottom bar
-    R recBtn() const { return {20.f, 706.f, 96.f, 30.f}; }
-    R scaleGroup() const { return {124.f, 706.f, 222.f, 52.f}; }
-    R gScaleBox() const { return {196.f, 712.f, 92.f, 40.f}; }
-    R gRootBox() const { return {292.f, 712.f, 48.f, 40.f}; }
-    R rndGroup() const { return {354.f, 706.f, 556.f, 52.f}; }
-    R rndBtn(int i) const { return {448.f + i * 92.f, 712.f, 88.f, 40.f}; }
-    R undoBtn() const { return {918.f, 712.f, 80.f, 40.f}; }
-    R presetBtn() const { return {1010.f, 704.f, 150.f, 34.f}; }
-    R saveBtn() const { return {1010.f, 742.f, 150.f, 34.f}; }
+    R recBtn() const { return fr(kframe::recBtn()); }
+    R gScaleBox() const { return fr(kframe::extraBtn(kframe::kExtrasX, 120.f)); }          // global SCALE + ROOT: the bar's extras
+    R gRootBox() const { return fr(kframe::extraBtn(kframe::kExtrasX + 126.f, 70.f)); }
+    R undoBtn() const { return fr(kframe::undoBtn()); }
+    R presetBtn() const { return fr(kframe::presetsBtn()); }
+    R saveBtn() const { return fr(kframe::saveBtn()); }
     // presets window
     R presetBox() const { return {80.f, 80.f, 1020.f, 640.f}; }
     R presetTab(int i) const { return {300.f + i * 134.f, 96.f, 128.f, 32.f}; }
@@ -800,6 +801,7 @@ protected:
         if (overlay == ovHelp) drawHelp();
         if (overlay == ovSkins) drawSkins();
         if (overlay == ovSave) drawSave();
+        if (overlay == ovNone) kframe::Draw<R, MonoUI>::drawRandomMenu(*this, barInfo());
         if (overlay == ovLicense) drawLicense();
         if (overlay == ovUpdate) drawUpdate();
         if (overlay == ovChain) drawChain();
@@ -1714,9 +1716,8 @@ protected:
 
     void drawSequencer()
     {
-        panelBox({14, 494, 1156, 204});
+        panelBox({14, 494, 1152, 226});
         for (int i = 0; i < kModes; ++i) button(modeBtn(i), kModeNames[i], mode == i, 10.f);
-        button(fillBtn(), "FILL", fillOn, 10.5f);
         Pattern& p = pat();
         const int len = tlen(selTrack);
         const int pages = (len + 15) / 16;
@@ -1835,13 +1836,13 @@ protected:
         button(pcKeysBtn(), pcKeys ? "PC KEYS: ON" : "PC KEYS: OFF", pcKeys, 10.f);
         button(panicBtn(), "ALL NOTES OFF", false, 10.f);
         std::snprintf(b, sizeof(b), "KEYS PLAY TRACK %d", selTrack + 1);
-        label(948, 636, b, 10.5f, th->text, ALIGN_LEFT | ALIGN_MIDDLE);
+        label(948, 648, b, 10.5f, th->text, ALIGN_LEFT | ALIGN_MIDDLE);
         const int ch = bank->kit[selTrack][kfMidi];
         if (ch > 0) std::snprintf(b, sizeof(b), "MIDI IN: CHANNEL %d", ch);
         else std::snprintf(b, sizeof(b), "MIDI IN: FOLLOWS SELECTION");
-        label(948, 656, b, 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
-        if (mode == mdNote) label(948, 676, noteStep >= 0 ? "STEP ENTRY ON" : "click a step, then a key", 9.5f, th->lock, ALIGN_LEFT | ALIGN_MIDDLE);
-        else if (pcKeys) label(948, 676, "A W S E D F T G Y H U J K   Z/X = octave", 9.f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        label(948, 668, b, 9.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
+        if (mode == mdNote) label(948, 688, noteStep >= 0 ? "STEP ENTRY ON" : "click a step, then a key", 9.5f, th->lock, ALIGN_LEFT | ALIGN_MIDDLE);
+        else if (pcKeys) label(948, 688, "A W S E D F T G Y H U J K   Z/X = octave", 9.f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
     }
 
     void overlayBox(const R& r)
@@ -1868,65 +1869,30 @@ protected:
     }
 
     // ------------------------------------------------------------------ bottom bar / overlays
+    // the common Kinetik bottom bar (Frame.hpp): REC CLICK | RANDOM | FILL | UNDO | SCALE ROOT | PRESETS | SAVE
+    bool rndOpen = false;
+    kframe::Bar barInfo() const
+    {
+        kframe::Bar b;
+        b.rec = rec; b.recLive = recording(); b.click = clickOn; b.fill = fillOn;
+        b.undoValid = !undoStack.empty(); b.redoValid = !redoStack.empty();
+        if (b.undoValid) b.undoWhat = undoStack.back().what;
+        b.preset = presetName; b.randomOpen = rndOpen;
+        b.randomItems = {{"SOUND", "this track"}, {"ALL SOUNDS", "every track, no steps"}, {"SEQUENCE", "this track"},
+                         {"PATTERN", "every track"}, {"EVERYTHING", "kit + effects + steps"}};
+        return b;
+    }
     void drawBottomBar()
     {
-        const R rb = recBtn();
-        const bool live = recording();
-        if (rec) {
-            box(rb, th->accent);
-            iconLabel(rb.cx(), rb.cy() + 1, icRec, "REC", 13.f, th->accentText);
-            if (live && th->glow) { beginPath(); rect(rb.x - 6, rb.y - 6, rb.w + 12, rb.h + 12); fillPaint(boxGradient(rb.x, rb.y, rb.w, rb.h, 4, 10, Color(th->accent, Color(0, 0, 0, 0.f), 0.45f), Color(0, 0, 0, 0.f))); fill(); }
-        } else {
-            box(rb, th->btnFill); frame(rb, th->btnEdge, -1.f, 1.5f);
-            iconLabel(rb.cx(), rb.cy() + 1, icRec, "REC", 13.f, th->logo == lgRiso ? th->text : th->accent);
-        }
-        {   // metronome on / off (heard while REC records)
-            const R cb = clickBtn();
-            if (clickOn) box(cb, Color(th->accent, th->btnFill, 0.55f)); else { box(cb, th->btnFill); frame(cb, th->btnEdge, -1.f, 1.f); }
-            label(cb.cx(), cb.cy() + 1, clickOn ? "CLICK ON" : "CLICK OFF", 9.f, clickOn ? th->text : th->dim, ALIGN_CENTER | ALIGN_MIDDLE);
-        }
-        const Color gt = th->logo == lgRiso ? th->text : th->dim;
-        {   // global scale: every track snaps to it
-            const R sg = scaleGroup();
-            box(sg, th->inner);
-            label(134, sg.y + 20, "SCALE", 10.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
-            label(134, sg.y + 37, "all tracks", 9.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
-            const bool on = bank->glob.scale > 0;
-            const R a = gScaleBox(), b = gRootBox();
-            if (on) box(a, th->selFill); else { box(a, th->btnFill); frame(a, th->btnEdge); }
-            label(a.cx(), a.cy() + 1, kScaleDefs[bank->glob.scale % kScales].name, 10.5f, on ? th->selText : th->btnText);
-            box(b, th->btnFill); frame(b, th->btnEdge);
-            label(b.cx(), b.cy() + 1, kNoteNames12[bank->glob.root % 12], 11.f, on ? th->btnText : th->faint);
-        }
-        const R grp = rndGroup();
-        box(grp, th->inner);
-        label(grp.x + 10, grp.y + 20, "RANDOMIZE", 10.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
-        label(grp.x + 10, grp.y + 37, "undo restores", 9.f, gt, ALIGN_LEFT | ALIGN_MIDDLE);
-        static const char* rn[5] = {"SOUND", "ALL SOUNDS", "SEQUENCE", "PATTERN", "EVERYTHING"};
-        static const char* rs[5] = {"this track", "no steps", "this track", "all tracks", "kit+fx+steps"};
-        for (int i = 0; i < 5; ++i) {
-            const R r = rndBtn(i);
-            box(r, th->btnFill); frame(r, th->btnEdge);
-            label(r.cx(), r.y + 14, rn[i], 10.5f, th->btnText);
-            label(r.cx(), r.y + 30, rs[i], 9.f, th->dim);
-        }
-        const R u = undoBtn();
-        const bool undoValid = !undoStack.empty(), redoValid = !redoStack.empty();
-        if (undoValid) { box(u, th->btnFill); frame(u, th->lock, -1.f, 1.5f); }
-        else { box(u, th->btnFill); frame(u, th->btnEdge); }
-        label(u.cx(), u.y + 14, "UNDO", 10.5f, undoValid ? th->lock : th->faint);
-        label(u.cx(), u.y + 30, undoValid ? undoStack.back().what.c_str() : (redoValid ? "right-click: redo" : ""), 9.f, th->dim);
-        // PRESETS button: caption + the current preset name (fitted inside, never over UNDO)
-        const R pb = presetBtn();
-        box(pb, th->btnFill); frame(pb, th->btnEdge, -1.f, 1.5f);
-        label(pb.x + 10, pb.y + 10, "PRESETS", 8.5f, th->dim, ALIGN_LEFT | ALIGN_MIDDLE);
-        if (th->fontNum == fnSerif) fitNumber(pb.x + 10, pb.y + 23, presetName, 13.f, pb.w - 44, th->text, ALIGN_LEFT | ALIGN_MIDDLE, fnSerifItalic);
-        else fitNumber(pb.x + 10, pb.y + 23, presetName, 12.f, pb.w - 44, th->text, ALIGN_LEFT | ALIGN_MIDDLE, -1);
-        beginPath(); moveTo(pb.x + pb.w - 28, pb.cy() - 5); lineTo(pb.x + pb.w - 21, pb.cy() + 1); lineTo(pb.x + pb.w - 28, pb.cy() + 7);
-        closePath(); fillColor(th->btnText); fill();
-        const R sv = saveBtn();
-        box(sv, th->btnFill); frame(sv, th->btnEdge, -1.f, 1.f);
-        label(sv.cx(), sv.cy() + 1, "SAVE AS PRESET", 10.5f, th->btnText);
+        kframe::Draw<R, MonoUI>::drawBar(*this, barInfo());
+        const bool on = bank->glob.scale > 0;   // global scale: every track snaps to it
+        const R a = gScaleBox(), b = gRootBox();
+        if (on) box(a, th->selFill); else { box(a, th->btnFill); frame(a, th->btnEdge); }
+        label(a.cx(), a.y + 14, "SCALE", 9.f, on ? th->selText : th->dim);
+        label(a.cx(), a.y + 30, kScaleDefs[bank->glob.scale % kScales].name, 10.5f, on ? th->selText : th->btnText);
+        box(b, th->btnFill); frame(b, th->btnEdge);
+        label(b.cx(), b.y + 14, "ROOT", 9.f, th->dim);
+        label(b.cx(), b.y + 30, kNoteNames12[bank->glob.root % 12], 11.f, on ? th->btnText : th->faint);
     }
 
     // ------------------------------------------------------------------ preset browser: tabs, search, favourites
@@ -2970,7 +2936,7 @@ protected:
         if (recBtn().in(x, y)) return "REC: while playing, knob moves are recorded as parameter locks and the notes you play (MIDI or on-screen keyboard) as steps.";
         if (clickBtn().in(x, y)) return "CLICK: a metronome on every beat while REC records (main output). Click to turn it on or off.";
         if (allBtn().in(x, y)) return "ALL: knobs move every track at once, each keeping its own offset (or hold Alt / Option while turning). Synth knobs: tracks with the same machine only.";
-        { static const char* rt[5] = {"New random sound for this track", "New random sounds on every track, steps unchanged", "New random steps for this track", "New random pattern on every track", "Random kit, effects and pattern"}; for (int i = 0; i < 5; ++i) if (rndBtn(i).in(x, y)) return std::string(rt[i]) + " (undo restores).";  }
+        if (kframe::randomBtn().in(x, y)) return "RANDOM: a new sound, sequence or pattern (choose in the menu). UNDO restores.";
         for (int t = 0; t < kTracks; ++t) {
             if (soloBtn(t).in(x, y)) return "Solo: only the soloed tracks play.";
             if (muteBtn(t).in(x, y)) return "Mute this track.";
@@ -3035,6 +3001,12 @@ protected:
         const bool right = ev.button == kMouseButtonRight;
         const bool shift = (ev.mod & kModifierShift) != 0;
 
+        if (rndOpen) {   // RANDOM menu: an item, or any other click closes it
+            const int h = kframe::hit(barInfo(), x, y);
+            rndOpen = false;
+            if (h >= kframe::hRandomItem) { static const int what[5] = {0, 4, 1, 2, 3}; randomize(what[h - kframe::hRandomItem]); }
+            repaint(); return true;
+        }
         if (overlay == ovPicker) {
             for (int m = 0; m < kMachines; ++m)
                 if (pickerCell(m).in(x, y)) { setMachineGroup(m); break; }
@@ -3114,7 +3086,7 @@ protected:
         }
         if (recBtn().in(x, y)) { setRec(!rec); repaint(); return true; }
         if (clickBtn().in(x, y)) { clickOn = !clickOn; sendClick(); saveView(); repaint(); return true; }
-        for (int i = 0; i < 5; ++i) if (rndBtn(i).in(x, y)) { static const int what[5] = {0, 4, 1, 2, 3}; randomize(what[i]); return true; }
+        if (overlay == ovNone && kframe::randomBtn().in(x, y)) { rndOpen = true; repaint(); return true; }
         if (undoBtn().in(x, y)) { if (right) redo(); else undo(); return true; }   // right-click = redo
         if (presetBtn().in(x, y)) { openPresets(); return true; }
         if (saveBtn().in(x, y)) { openSave(); return true; }
@@ -3977,7 +3949,7 @@ private:
 
     // ------------------------------------------------------------------ metronome while recording (per user)
     bool clickOn = true;
-    R clickBtn() const { return {20.f, 740.f, 96.f, 18.f}; }
+    R clickBtn() const { return fr(kframe::clickBtn()); }
     void sendClick()
     {
         if (direct) direct->setClick(clickOn);

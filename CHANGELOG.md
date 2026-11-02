@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.16.0
+
+- **Same layout as the other Kinetik plug-ins.** One window size (1180 x 800) and a common bottom bar at the same place in every plug-in: REC / CLICK, RANDOM (a menu), FILL (HOLD), UNDO (shows what it undoes), the plug-in's own buttons, PRESETS (with the preset's name) and SAVE. PAT / PLAY / BPM / SKIN keep the same spot in the header.
+- RANDOM is a menu. SCALE and ROOT moved to the bottom bar; the keyboard moved down.
+- Sequencer toolbar in the family's order (pages, LEN, SPEED, < >, COPY PASTE CLEAR, -LOCKS).
+
 ## 0.15.1
 
 - **SHIMMER reverb rebuilt.** The octave-up sound now lives inside the reverb's own feedback, crossfaded with the normal tail instead of added on top: no more build-up and crackle when MOD goes past the middle, the reverb keeps the colour of what you send it, and MOD really brings in the shimmering octave above (finer, wider, a little detuned between lines). The Ambient Drift preset was revoiced for it.
