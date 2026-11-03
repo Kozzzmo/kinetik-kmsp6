@@ -1058,7 +1058,7 @@ protected:
     }
     void drawScope(const R& g)
     {
-        lcdGrid(g, 6, 4);
+        // no grid behind the scope (owner's request, 0.16.2, as KDSP-16)
         beginPath(); rect(g.x, g.cy(), g.w, 1.f); fillColor(withAlpha(th->lcdDim, 0.5f)); fill();
         if (machineOf(selTrack) == mOFF) { label(g.cx(), g.cy(), "TRACK OFF", 14.f, th->lcdDim); return; }
         updateScope();

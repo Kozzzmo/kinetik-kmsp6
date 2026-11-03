@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.2
+
+- The waveform display of the SYNTH page no longer draws a grid behind the sound (as KDSP-16).
+
 ## 0.16.1
 
 - **RANDOM > SAME SOUND**: one new random sound (on the selected track's machine) is put on every track: knobs, machine, wavetable and the chorus / CHAOS sends. With LINK, every voice then sounds alike. The steps are not touched; UNDO restores.
