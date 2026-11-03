@@ -441,16 +441,16 @@ protected:
     R machPrev() const { return {150.f, 156.f, 26.f, 26.f}; }
     R machName() const { return {178.f, 156.f, 130.f, 26.f}; }
     R machNext() const { return {310.f, 156.f, 26.f, 26.f}; }
-    R lockClear() const { return {596.f, 156.f, 94.f, 24.f}; }
+    R lockClear() const { return {562.f, 156.f, 94.f, 24.f}; }
     // wavetable selector (SYNTH page of WAVE / CHORD): < TABLE > + LOAD
     bool showTable() const { const int m = machineOf(selTrack); return page == pgSynth && lockStep < 0 && !rec && (m == mWAVE || m == mCHORD); }
     R tabPrev() const { return {446.f, 156.f, 22.f, 26.f}; }
-    R tabName() const { return {470.f, 156.f, 118.f, 26.f}; }
-    R tabNext() const { return {590.f, 156.f, 22.f, 26.f}; }
-    R tabLoad() const { return {618.f, 157.f, 72.f, 24.f}; }
+    R tabName() const { return {470.f, 156.f, 96.f, 26.f}; }
+    R tabNext() const { return {568.f, 156.f, 22.f, 26.f}; }
+    R tabLoad() const { return {594.f, 157.f, 64.f, 24.f}; }
     R pageTab(int i) const { return {20.f + i * 68.5f, 304.f, 65.5f, 28.f}; }   // ALL button at the end of the row
     R knob(int k) const { const int n = slots(); if (k >= n) return {-1000.f, -1000.f, 0.f, 0.f}; const float w = 680.f / n; return {20.f + k * w, 340.f, w, 120.f}; }
-    R mTab(int i) const { const float w = (448.f - (kMPages - 1) * 4.f) / kMPages; return {716.f + i * (w + 4.f), 146.f, w, 28.f}; }
+    R mTab(int i) const { const float w = (448.f - 30.f - (kMPages - 1) * 4.f) / kMPages; return {716.f + i * (w + 4.f), 146.f, w, 28.f}; }   // the effect die after the tabs
     // master knobs: 4 per row (8), the ECHO tab has 6 per row (12)
     int mSlots() const { return mpage == mpEcho ? 12 : 8; }
     R mKnob(int k) const
@@ -1549,14 +1549,14 @@ protected:
             const int nsel = selCount();
             if (nsel > 1) std::snprintf(b, sizeof(b), "LOCK %d STEPS", nsel);
             else std::snprintf(b, sizeof(b), "LOCK STEP %02d", lockStep + 1);
-            label(586, 169, b, 11.5f, th->lock, ALIGN_RIGHT | ALIGN_MIDDLE);
+            label(552, 169, b, 11.5f, th->lock, ALIGN_RIGHT | ALIGN_MIDDLE);
             frame(lockClear(), th->lock); label(lockClear().cx(), lockClear().cy() + 1, "CLEAR", 10.f, th->lock);
         } else if (rec) {
-            iconLabel(688, 169, icRec, recording() ? "REC: play notes / turn knobs" : "REC armed: start playback", 10.f,
+            iconLabel(654, 169, icRec, recording() ? "REC: play notes / turn knobs" : "REC armed: start playback", 10.f,
                       th->logo == lgRiso ? th->text : th->accent, th->fontLabel, ALIGN_RIGHT);
         } else if (mode == mdNote && noteStep >= 0) {
             std::snprintf(b, sizeof(b), "STEP %02d: play a key", noteStep + 1);
-            label(688, 169, b, 10.5f, th->lock, ALIGN_RIGHT | ALIGN_MIDDLE);
+            label(654, 169, b, 10.5f, th->lock, ALIGN_RIGHT | ALIGN_MIDDLE);
         } else if (showTable()) {
             frame(tabPrev(), th->lcdText); label(tabPrev().cx(), tabPrev().cy() + 1, "\xE2\x97\x80", 9.f, th->lcdText, ALIGN_CENTER | ALIGN_MIDDLE, fnSans);
             frame(tabNext(), th->lcdText); label(tabNext().cx(), tabNext().cy() + 1, "\xE2\x96\xB6", 9.f, th->lcdText, ALIGN_CENTER | ALIGN_MIDDLE, fnSans);
@@ -1871,6 +1871,19 @@ protected:
     // ------------------------------------------------------------------ bottom bar / overlays
     // the common Kinetik bottom bar (Frame.hpp): REC CLICK | RANDOM | FILL | UNDO | SCALE ROOT | PRESETS | SAVE
     bool rndOpen = false;
+    int rndLast = 1;   // menu item a click on RANDOM does again (ALL SOUNDS until another is chosen)
+    static constexpr int kRndWhat[6] = {0, 4, 5, 1, 2, 3};
+    // dice (one click, no menu): the selected track's sound (and its group), its sequence, the pattern, the effect shown
+    static kframe::Rc diceSound() { return {664.f, 157.f, 24.f, 24.f}; }
+    static kframe::Rc diceSeq() { return {1112.f, 504.f, 26.f, 26.f}; }
+    static kframe::Rc dicePat() { return {786.f, 398.f, 22.f, 22.f}; }
+    static kframe::Rc diceFx() { return {1140.f, 148.f, 24.f, 24.f}; }
+    void drawDice()
+    {
+        using D = kframe::Draw<R, MonoUI>;
+        D::dice(*this, diceSound()); D::dice(*this, diceSeq()); D::dice(*this, dicePat());
+        if (fxTabOf(mpage) >= 0) D::dice(*this, diceFx());
+    }
     kframe::Bar barInfo() const
     {
         kframe::Bar b;
@@ -1880,10 +1893,13 @@ protected:
         b.preset = presetName; b.randomOpen = rndOpen;
         b.randomItems = {{"SOUND", "this track"}, {"ALL SOUNDS", "every track, no steps"}, {"SAME SOUND", "one sound on every track"}, {"SEQUENCE", "this track"},
                          {"PATTERN", "every track"}, {"EVERYTHING", "kit + effects + steps"}};
+        static const char* last[6] = {"sound", "all sounds", "same sound", "sequence", "pattern", "everything"};
+        b.randomLast = last[rndLast % 6];
         return b;
     }
     void drawBottomBar()
     {
+        drawDice();
         kframe::Draw<R, MonoUI>::drawBar(*this, barInfo());
         const bool on = bank->glob.scale > 0;   // global scale: every track snaps to it
         const R a = gScaleBox(), b = gRootBox();
@@ -2496,8 +2512,9 @@ protected:
         static const char* names[6] = {"sound", "sequence", "pattern", "everything", "all sounds", "same sound"};
         snapshot(names[what]);
         std::vector<float> nv(values, values + kTotalParams);
-        if (what == 0) {
+        if (what == 0) {   // the selected track and the tracks grouped with it (right-click), each its own sound
             randomizeSound(nv.data(), selTrack, machineOf(selTrack), r);
+            for (int t : groupOthers()) randomizeSound(nv.data(), t, machineOf(t), r);
             applyState(nv.data(), nullptr);
         } else if (what == 4) {
             // every track's sound (machines kept), the sequencer is not touched
@@ -2951,7 +2968,12 @@ protected:
         if (recBtn().in(x, y)) return "REC: while playing, knob moves are recorded as parameter locks and the notes you play (MIDI or on-screen keyboard) as steps.";
         if (clickBtn().in(x, y)) return "CLICK: a metronome on every beat while REC records (main output). Click to turn it on or off.";
         if (allBtn().in(x, y)) return "ALL: knobs move every track at once, each keeping its own offset (or hold Alt / Option while turning). Synth knobs: tracks with the same machine only.";
-        if (kframe::randomBtn().in(x, y)) return "RANDOM: a new sound, sequence or pattern (choose in the menu). SAME SOUND puts one new sound on every track (for LINK). UNDO restores.";
+        if (kframe::randomArrow().in(x, y)) return "The RANDOM menu: choose what RANDOM changes (it then remembers it). SAME SOUND puts one new sound on every track (for LINK).";
+        if (kframe::randomBtn().in(x, y)) return "RANDOM: does again what is written below it (choose with the arrow). UNDO restores.";
+        if (diceSound().in(x, y)) return "Random sound for this track (and the tracks grouped with it). UNDO restores.";
+        if (diceSeq().in(x, y)) return "Random sequence for this track. UNDO restores.";
+        if (dicePat().in(x, y)) return "Random pattern on every track. UNDO restores.";
+        if (diceFx().in(x, y) && fxTabOf(mpage) >= 0) return "Random settings for the effect shown (one of its presets, a little changed). UNDO restores.";
         for (int t = 0; t < kTracks; ++t) {
             if (soloBtn(t).in(x, y)) return "Solo: only the soloed tracks play.";
             if (muteBtn(t).in(x, y)) return "Mute this track.";
@@ -3019,7 +3041,7 @@ protected:
         if (rndOpen) {   // RANDOM menu: an item, or any other click closes it
             const int h = kframe::hit(barInfo(), x, y);
             rndOpen = false;
-            if (h >= kframe::hRandomItem) { static const int what[6] = {0, 4, 5, 1, 2, 3}; randomize(what[h - kframe::hRandomItem]); }
+            if (h >= kframe::hRandomItem) { rndLast = h - kframe::hRandomItem; randomize(kRndWhat[rndLast]); }
             repaint(); return true;
         }
         if (overlay == ovPicker) {
@@ -3101,7 +3123,14 @@ protected:
         }
         if (recBtn().in(x, y)) { setRec(!rec); repaint(); return true; }
         if (clickBtn().in(x, y)) { clickOn = !clickOn; sendClick(); saveView(); repaint(); return true; }
-        if (overlay == ovNone && kframe::randomBtn().in(x, y)) { rndOpen = true; repaint(); return true; }
+        if (overlay == ovNone && kframe::randomArrow().in(x, y)) { rndOpen = true; repaint(); return true; }
+        if (overlay == ovNone && kframe::randomBtn().in(x, y)) { randomize(kRndWhat[rndLast]); return true; }
+        if (overlay == ovNone) {   // dice
+            if (diceSound().in(x, y)) { randomize(0); return true; }
+            if (diceSeq().in(x, y)) { randomize(1); return true; }
+            if (dicePat().in(x, y)) { randomize(2); return true; }
+            if (diceFx().in(x, y)) { if (fxTabOf(mpage) >= 0) randomizeFx(); return true; }
+        }
         if (undoBtn().in(x, y)) { if (right) redo(); else undo(); return true; }   // right-click = redo
         if (presetBtn().in(x, y)) { openPresets(); return true; }
         if (saveBtn().in(x, y)) { openSave(); return true; }
@@ -3813,6 +3842,29 @@ private:
                 break;
             }
         overlay = ovNone; repaint();
+    }
+
+    // die of the effect panel: one of the shown effect's presets (not the same twice in a row), every value nudged
+    int lastFxRandom = -1;
+    void randomizeFx()
+    {
+        const auto v = fxList(); const auto& all = fxPresets();
+        if (v.empty()) return;
+        RandGen r(++rndCounter * 2654435761u ^ lastClickTime);
+        int pick = v[(size_t)r.range(0, (int)v.size() - 1)];
+        if (pick == lastFxRandom && v.size() > 1) pick = v[((size_t)(std::find(v.begin(), v.end(), pick) - v.begin()) + 1) % v.size()];
+        lastFxRandom = pick;
+        snapshot("random effect");
+        const bool wasRestoring = restoring; restoring = true;
+        if (all[pick].tab == fxEcho)
+            for (int g : {(int)gECHO_RTIME, (int)gECHO_DRIVE, (int)gECHO_DUCK, (int)gECHO_FREEZE}) setParamGesture(kGlobalBase + g, globalDefault(g));
+        for (const FxSet& fs : all[pick].set) {
+            const bool keep = fs.g == gECHO_MODEL || fs.g == gREV_MODEL || fs.g == gCHO_MODEL || fs.g == gECHO_TIME;   // models and synced times stay exact
+            const int j = keep ? 0 : r.range(-12, 12);
+            setParamGesture(kGlobalBase + fs.g, (float)clampi(fs.v + j, 0, 127));
+        }
+        restoring = wasRestoring;
+        repaint();
     }
 
     // ------------------------------------------------------------------ LFO rings: which knobs an LFO moves

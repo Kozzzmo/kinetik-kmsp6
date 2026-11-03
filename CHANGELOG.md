@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.17.0
+
+- **RANDOM in one click.** The RANDOM button now does again what is written below it (the last choice); its arrow opens the menu to choose another.
+- **Dice**: a die in each zone gives a new random result in one click: the display (the selected track's sound, and the tracks grouped with it), the sequencer bar (its sequence), PATTERNS (the pattern) and after the effect tabs (the effect shown: one of its presets, a little changed).
+
 ## 0.16.2
 
 - The waveform display of the SYNTH page no longer draws a grid behind the sound (as KDSP-16).
