@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.1
+
+- **RANDOM > SAME SOUND**: one new random sound (on the selected track's machine) is put on every track: knobs, machine, wavetable and the chorus / CHAOS sends. With LINK, every voice then sounds alike. The steps are not touched; UNDO restores.
+
 ## 0.16.0
 
 - **Same layout as the other Kinetik plug-ins.** One window size (1180 x 800) and a common bottom bar at the same place in every plug-in: REC / CLICK, RANDOM (a menu), FILL (HOLD), UNDO (shows what it undoes), the plug-in's own buttons, PRESETS (with the preset's name) and SAVE. PAT / PLAY / BPM / SKIN keep the same spot in the header.

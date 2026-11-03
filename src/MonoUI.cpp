@@ -1878,7 +1878,7 @@ protected:
         b.undoValid = !undoStack.empty(); b.redoValid = !redoStack.empty();
         if (b.undoValid) b.undoWhat = undoStack.back().what;
         b.preset = presetName; b.randomOpen = rndOpen;
-        b.randomItems = {{"SOUND", "this track"}, {"ALL SOUNDS", "every track, no steps"}, {"SEQUENCE", "this track"},
+        b.randomItems = {{"SOUND", "this track"}, {"ALL SOUNDS", "every track, no steps"}, {"SAME SOUND", "one sound on every track"}, {"SEQUENCE", "this track"},
                          {"PATTERN", "every track"}, {"EVERYTHING", "kit + effects + steps"}};
         return b;
     }
@@ -2493,7 +2493,7 @@ protected:
     void randomize(int what)
     {
         RandGen r(++rndCounter * 2654435761u ^ lastClickTime);
-        static const char* names[5] = {"sound", "sequence", "pattern", "everything", "all sounds"};
+        static const char* names[6] = {"sound", "sequence", "pattern", "everything", "all sounds", "same sound"};
         snapshot(names[what]);
         std::vector<float> nv(values, values + kTotalParams);
         if (what == 0) {
@@ -2503,6 +2503,21 @@ protected:
             // every track's sound (machines kept), the sequencer is not touched
             for (int t = 0; t < kTracks; ++t) randomizeSound(nv.data(), t, machineOf(t), r);
             applyState(nv.data(), nullptr);
+        } else if (what == 5) {
+            // SAME SOUND: one new sound (on the selected track's machine) copied to every track - knobs, machine,
+            // wavetable and the track's chorus / CHAOS sends - so LINK voices all sound alike. Steps are not touched.
+            const int m = machineOf(selTrack);
+            randomizeSound(nv.data(), selTrack, m, r);
+            std::unique_ptr<Bank> nb(new Bank(*bank));
+            for (int t = 0; t < kTracks; ++t) {
+                if (t == selTrack) continue;
+                for (int k = 0; k < kTrackParams; ++k) nv[tpIndex(t, k)] = nv[tpIndex(selTrack, k)];
+                nv[kGlobalBase + choSendG(t)] = nv[kGlobalBase + choSendG(selTrack)];
+                nv[kGlobalBase + chaSendG(t)] = nv[kGlobalBase + chaSendG(selTrack)];
+                nb->machine[t] = (uint8_t)m;
+                nb->kit[t][kfTable] = nb->kit[selTrack][kfTable];
+            }
+            applyState(nv.data(), nb.get());
         } else if (what == 1) {
             std::unique_ptr<Pattern> tmp(new Pattern(pat()));
             randomizeSequence(*tmp, selTrack, machineOf(selTrack), r);
@@ -2936,7 +2951,7 @@ protected:
         if (recBtn().in(x, y)) return "REC: while playing, knob moves are recorded as parameter locks and the notes you play (MIDI or on-screen keyboard) as steps.";
         if (clickBtn().in(x, y)) return "CLICK: a metronome on every beat while REC records (main output). Click to turn it on or off.";
         if (allBtn().in(x, y)) return "ALL: knobs move every track at once, each keeping its own offset (or hold Alt / Option while turning). Synth knobs: tracks with the same machine only.";
-        if (kframe::randomBtn().in(x, y)) return "RANDOM: a new sound, sequence or pattern (choose in the menu). UNDO restores.";
+        if (kframe::randomBtn().in(x, y)) return "RANDOM: a new sound, sequence or pattern (choose in the menu). SAME SOUND puts one new sound on every track (for LINK). UNDO restores.";
         for (int t = 0; t < kTracks; ++t) {
             if (soloBtn(t).in(x, y)) return "Solo: only the soloed tracks play.";
             if (muteBtn(t).in(x, y)) return "Mute this track.";
@@ -3004,7 +3019,7 @@ protected:
         if (rndOpen) {   // RANDOM menu: an item, or any other click closes it
             const int h = kframe::hit(barInfo(), x, y);
             rndOpen = false;
-            if (h >= kframe::hRandomItem) { static const int what[5] = {0, 4, 1, 2, 3}; randomize(what[h - kframe::hRandomItem]); }
+            if (h >= kframe::hRandomItem) { static const int what[6] = {0, 4, 5, 1, 2, 3}; randomize(what[h - kframe::hRandomItem]); }
             repaint(); return true;
         }
         if (overlay == ovPicker) {

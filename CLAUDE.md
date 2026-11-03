@@ -331,3 +331,4 @@ User presets: `.../Kinetik/KMSP-6/Presets/*.kmsp` (header `KMSP6-PRESET 2`).
   COPY PASTE CLEAR | -LOCKS | the plug-in's extras on the right.
 - Next steps agreed: the KDSP-16 preset browser everywhere, PATTERNS block, knob pages / LFO order / names, then KJNG-2.
 - KMSP-6: SCALE / ROOT = bottom-bar extras (`gScaleBox`, `gRootBox`); keyboard at y 636.
+- 0.16.1 (owner: a random that gives every track the same sound, for LINK): RANDOM menu item SAME SOUND = `randomize(5)` (menu order SOUND, ALL SOUNDS, SAME SOUND, SEQUENCE, PATTERN, EVERYTHING -> `what[6] = {0, 4, 5, 1, 2, 3}`): `randomizeSound` on the selected track, then its 56 params, chorus / CHAOS sends, machine and `kfTable` copied to every track (one `applyState`, one undo step).
